@@ -42,25 +42,25 @@ adc_dll = CDLL(usbadc_dll_path)
 #    BYTE byActived;     // channel for compare trigger
 #    BYTE byReserved;
 #    WORD wTrigVol;      // trigger gating voltage
-#    WORD wReserved;
-#    DWORD dwPeriod;     // sampling period (interval)
+#    WORD wPeriod;       // sampling period (interval)
+#    DWORD wReserved1;
 #    DWORD dwCycleCnt;   // counter for sampling cycles
 #    DWORD dwMaxCycles;  // max sampling cycles, 0 for no limit
-#    DWORD dwReserved;
+#    DWORD dwReserved2;
 # } ADC_CONFIG;
 # ctypes equivalent:
 class ADC_CONFIG(Structure):
     _fields_ = [
         ("byADCOptions", c_ubyte),
-        ("byGPIO", c_ubyte),
-        ("byActived", c_ubyte),
-        ("byReserved", c_ubyte),
+        ("byGPIO"      , c_ubyte),
+        ("byActived"   , c_ubyte),
+        ("byReserved"  , c_ubyte),
         ("wTrigVol", c_ushort),
-        ("wReserved", c_ushort),
-        ("dwPeriod", c_ulong),
-        ("dwCycleCnt", c_ulong),
+        ("wPeriod" , c_ushort),
+        ("dwReserved1", c_ulong),
+        ("dwCycleCnt" , c_ulong),
         ("dwMaxCycles", c_ulong),
-        ("dwReserved", c_ulong)
+        ("dwReserved2", c_ulong)
     ]
 
 # Set callback function for USB plug-in/out notification
@@ -391,10 +391,12 @@ class M3F20xmADC:
         print(f"    GPIO voltage level (0=low, 1=high):"
               f"{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
         print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
+        #print(f"  byReserved  = {conf.byReserved:08b} (reserved)")
         print(f"  wTrigVol    = {conf.wTrigVol} (trigger voltage in mV)")
-        print(f"  dwPeriod    = {conf.dwPeriod} (sampling period)")
+        print(f"  dwPeriod    = {conf.wPeriod} (sampling period)")
+        #print(f"  dwReserved1 = {conf.dwReserved1} (reserved)")
         print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
-        print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
+        #print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
 
     def show_reg(self):
         reg = lambda n: self.reg_list[n-1]
