@@ -218,14 +218,32 @@ class M3F20xmADC:
         print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03}")
         print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03}")
         print(f"  Input range (4bits):")
-        print(f"    CH1: {reg(0x03)>>0 & 0x0F:04b}")
-        print(f"    CH2: {reg(0x03)>>4 & 0x0F:04b}")
-        print(f"    CH3: {reg(0x04)>>0 & 0x0F:04b}")
-        print(f"    CH4: {reg(0x04)>>4 & 0x0F:04b}")
-        print(f"    CH5: {reg(0x05)>>0 & 0x0F:04b}")
-        print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b}")
-        print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b}")
-        print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b}")
+        rginfo = {
+            0b0000: "±2.5 V single-ended",
+            0b0001: "±5   V single-ended",
+            0b0010: "±6.25V single-ended",
+            0b0011: "±10  V single-ended",
+            0b0100: "±12.5V single-ended",
+            0b0101: "0~ 5  V single-ended",
+            0b0110: "0~10  V single-ended",
+            0b0111: "0~12.5V single-ended",
+            0b1000: "±5   V differential",
+            0b1001: "±10  V differential",
+            0b1010: "±12.5V differential",
+            0b1011: "±20  V differential",
+            0b1100: "(not defined)",
+            0b1101: "(not defined)",
+            0b1110: "(not defined)",
+            0b1111: "(not defined)",
+        }
+        print(f"    CH1: {reg(0x03)>>0 & 0x0F:04b} ({rginfo[reg(0x03)>>0 & 0x0F]}))")
+        print(f"    CH2: {reg(0x03)>>4 & 0x0F:04b} ({rginfo[reg(0x03)>>4 & 0x0F]}))")
+        print(f"    CH3: {reg(0x04)>>0 & 0x0F:04b} ({rginfo[reg(0x04)>>0 & 0x0F]}))")
+        print(f"    CH4: {reg(0x04)>>4 & 0x0F:04b} ({rginfo[reg(0x04)>>4 & 0x0F]}))")
+        print(f"    CH5: {reg(0x05)>>0 & 0x0F:04b} ({rginfo[reg(0x05)>>0 & 0x0F]}))")
+        print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
+        print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
+        print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
         print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1)")
         print("  Oversampling:")
         print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
@@ -248,7 +266,7 @@ class M3F20xmADC:
         print(f"    CH6: {reg(0x16)}")
         print(f"    CH7: {reg(0x17)}")
         print(f"    CH8: {reg(0x18)}")
-        print(f"   Phase delay from 0 µs to 255 µs in steps of 1 µs. (0~255):")
+        print(f"  Phase delay from 0 µs to 255 µs in steps of 1 µs. (0~255):")
         print(f"    CH1: {reg(0x19)}")
         print(f"    CH2: {reg(0x1A)}")
         print(f"    CH3: {reg(0x1B)}")
