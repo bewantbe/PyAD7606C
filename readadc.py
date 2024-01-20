@@ -14,13 +14,13 @@ if __name__ == '__main__':
     t1 = time.time()
     print('time cost: ', t1-t0, 's (open device)')
 
-    if 0:
+    if 1:
         conf = adc.get_config()
-        byADCOptions = conf.byADCOptions & (0xFF ^ 0x20)
+        byADCOptions = conf.byADCOptions & (0xFF ^ 0x20) | 0x20
         adc.config(byADCOptions = byADCOptions,
-                dwPeriod = 100,
-                dwCycleCnt = 0,
-                dwMaxCycles = 10000)
+                   wPeriod = 1000,
+                   dwCycleCnt = 0,
+                   dwMaxCycles = 10)
 
         adc.set_register('reset')
 
@@ -45,40 +45,35 @@ if __name__ == '__main__':
         t1 = time.time()
         print('time cost: ', t1-t0, 's (single sampling)')
 
-    if 0:
+    if 1:
         n_frame_total = 0
         n_continued_empty_frames = 0
+        t_wait = 4 * adc.get_sampling_interval()
+        ii = 0
 
         t0 = time.time()
         adc.start()
-        for i in range(100):
-            dbg_print(4, '------- loop', i)
+        while n_frame_total < adc.get_config().dwMaxCycles:
+            ii += 1
+            dbg_print(4, '------- loop', ii)
             v, n_left = adc.read()   # non-block
             if len(v) == 0 and n_left == 0:
                 n_continued_empty_frames += 1
+                if n_continued_empty_frames > 1:
+                    break
+                time.sleep(max(0.01, t_wait))
+                continue
             else:
                 n_continued_empty_frames = 0
-            if n_continued_empty_frames > 10:
-                break
-            if len(v) == 0:
-                time.sleep(0.01)
-                continue
             print(f'data size {len(v)} = {len(v)//8}*8,  data left: {n_left}')
-            print('data mean', np.mean(v))
+            if len(v) > 0:
+                print('data mean', np.mean(v))
             n_frame_total += len(v) // 8
-            if n_left < 8192:
-                time.sleep(0.1)
         adc.stop()
 
-        dbg_print(4, '------- loop ends')
-        v, n_left = adc.read()
-        dbg_print(4, 'data size', len(v))
-        if len(v):
-            dbg_print(4,'data mean', np.mean(v))
-        n_frame_total += len(v) // 8
         print('total frame', n_frame_total)
         t1 = time.time()
-        print('time cost: ', t1-t0, 's, i = ', i)
+        print('time cost: ', t1-t0, 's, ii = ', ii)
 
     #print('')
     #adc.show_config()     # cost about 0.0011 seconds

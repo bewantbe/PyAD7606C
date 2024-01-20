@@ -352,6 +352,11 @@ class M3F20xmADC:
             self.reg_list[i] = v
         M3F20xm_WriteAllReg(self.device_number, self.reg_list)
 
+    def get_sampling_interval(self):
+        t_unit = 1e-3 if (self.adc_config.byADCOptions & 0x20) else 1e-6
+        t_cnt = self.adc_config.wPeriod
+        return t_unit * t_cnt
+
     def show_config(self):
         # show config in user friendly way
         conf = self.adc_config
@@ -396,7 +401,7 @@ class M3F20xmADC:
         print(f"  dwPeriod    = {conf.wPeriod} (sampling period)")
         #print(f"  dwReserved1 = {conf.dwReserved1} (reserved)")
         print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
-        #print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
+        print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
 
     def show_reg(self):
         reg = lambda n: self.reg_list[n-1]
