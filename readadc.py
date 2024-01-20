@@ -11,6 +11,25 @@ from ctypes import (
 
 from M3F20xm import *
 
+debug_level = 3
+
+def dbg_print(level, *p, **keys):
+    """
+    Used for printing error and debugging information.
+    Controlled by global (module) debug_level.
+    Higher debug_level will show more information.
+        debug_level == 0: show nothing.
+        debug_level == 1: show only error.
+        debug_level == 2: show warning.
+        debug_level == 3: show hint.
+        debug_level == 4: show message.
+        debug_level == 5: most verbose.
+    """
+    if level > debug_level:
+        return
+    level_str = {1:'Error', 2:'Warning', 3:'Hint', 4:'Message', 5:'Verbose'}
+    print(level_str[level] + ':', *p, **keys)
+
 class M3F20xmADC:
     # Note: This interface give user a non-ctypes way to use the ADC.
     REG_LIST_LENGTH = 47
@@ -27,11 +46,11 @@ class M3F20xmADC:
 
     # Define the callback function
     def usb_ready_callback(iDevIndex, iDevStatus):
-        print(f"iDevIndex: {iDevIndex}, iDevStatus: {iDevStatus}")
+        dbg_print(3, f"iDevIndex: {iDevIndex}, iDevStatus: {iDevStatus}")
         if iDevStatus == 0x00:
-            print("Device unplugged.")
+            print(3, "Device unplugged.")
         elif iDevStatus == 0x80:
-            print("Device plugged in.")
+            print(3, "Device plugged in.")
         return True
     
     def init(self):
@@ -40,7 +59,7 @@ class M3F20xmADC:
 
         # Call M3F20xm_SetUSBNotify with the callback function
         result = M3F20xm_SetUSBNotify(True, USB_READY_CALLBACK)
-        print(f"M3F20xm_SetUSBNotify return {result}.")
+        dbg_print(5, f"M3F20xm_SetUSBNotify return {result}.")
 
         # wait a while for the device to be ready
         # 0.04 second is at the boundary of success and failure, so we choose 0.1 second
@@ -54,12 +73,12 @@ class M3F20xmADC:
             device_number = M3F20xm_OpenDevice()
 
         if device_number == 0xFF:
-            print("Failed to open device. e.g. device not plugged in or been used by other program.")
+            dbg_print(1, "Failed to open device. e.g. device not plugged in or been used by other program.")
             self.ready = False
             # raise an OSError exception
             raise OSError("Failed to open device.")
         else:
-            print(f"Device opened successfully. Device Number: {device_number}")
+            dbg_print(3, f"Device opened successfully. Device Number: {device_number}")
             self.ready = True
             self.device_number = device_number
 
@@ -73,11 +92,11 @@ class M3F20xmADC:
             if result:
                 q = M3F20xm_GetVersion_query_dict[i_type]
                 v = ver_buffer.value.decode('utf-8')
-                print(f"Query successful. {q}: "
+                dbg_print(5, f"Query successful. {q}: "
                     f"{v}")
                 self.version_string[q] = v
             else:
-                print("Error in querying version.")
+                dbg_print(1, "Error in querying version.")
                 self.ready = False
 
         _, serial_number = self.status()
@@ -86,17 +105,17 @@ class M3F20xmADC:
         # call M3F20xm_Verify
         verify_result = c_ubyte(0)
         result = M3F20xm_Verify(device_number, byref(verify_result))
-        print(f"M3F20xm_Verify return {result}. Verify result: {verify_result.value}.")
+        dbg_print(4, f"M3F20xm_Verify return {result}. Verify result: {verify_result.value}.")
         self.verify_result = verify_result.value
 
         # call M3F20xm_ADCGetConfig
         adc_config = ADC_CONFIG()
         result = M3F20xm_ADCGetConfig(device_number, byref(adc_config))
-        print(f"M3F20xm_ADCGetConfig return {result}.")
-        print("ADC_CONFIG:")
+        dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
+        dbg_print(5, "ADC_CONFIG:")
         for field in adc_config._fields_:
             v = getattr(adc_config, field[0])
-            print(f"    {field[0]}\t: {v} = ({hex(v)})")
+            dbg_print(5, f"    {field[0]}\t: {v} = ({hex(v)})")
         self.adc_config = adc_config
 
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
@@ -132,7 +151,7 @@ class M3F20xmADC:
     def get_register(self):
         reg_list = self.reg_list
         ret = M3F20xm_ReadAllReg(self.device_number, reg_list)
-        print('M3F20xm_ReadAllReg return', ret)
+        dbg_print(5, 'M3F20xm_ReadAllReg return', ret)
         return reg_list
 
     def set_register(self, reg_list):
@@ -275,21 +294,21 @@ class M3F20xmADC:
         SampleFrameType = c_ushort * 8
         values = SampleFrameType()
         result = M3F20xm_ADCRead(self.device_number, values)
-        print(f"M3F20xm_ADCRead return {result}.")
-        print("ADC sample data:")
+        dbg_print(5, f"M3F20xm_ADCRead return {result}.")
+        dbg_print(4, "ADC sample data:")
         for v in values:
-            print(f"    {v} = ({hex(v)})")
+            dbg_print(4, f"    {v} = ({hex(v)})")
         return array.array('H', values)
 
     def start(self):
         result = M3F20xm_InitFIFO(self.device_number)
-        print('M3F20xm_InitFIFO return', result)
+        dbg_print(5, 'M3F20xm_InitFIFO return', result)
         result = M3F20xm_ADCStart(self.device_number)
-        print('M3F20xm_ADCStart return', result)
+        dbg_print(5, 'M3F20xm_ADCStart return', result)
 
     def stop(self):
         result = M3F20xm_ADCStop(self.device_number)
-        print('M3F20xm_ADCStop return', result)
+        dbg_print(5, 'M3F20xm_ADCStop return', result)
 
     def read(self):
         # read all data in FIFO
@@ -301,19 +320,19 @@ class M3F20xmADC:
         lpBuffer = (c_ushort * dwBuffSize)()
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
-        print('M3F20xm_ReadFIFO return', result)
-        print(f"pdwRealSize: {pdwRealSize.value}")
+        dbg_print(5, 'M3F20xm_ReadFIFO return', result)
+        dbg_print(5, f"pdwRealSize: {pdwRealSize.value}")
         # data left
         pwdBuffSize = c_ulong(0)
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
-        print('M3F20xm_GetFIFOLeft return', result)
-        print(f"Data still in buffer: {pwdBuffSize.value}")
+        dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
+        dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
         return array.array('H', lpBuffer[:n_channel * pdwRealSize.value])
 
     def close(self):
         # close device
         result = M3F20xm_CloseDevice(self.device_number)
-        print('M3F20xm_CloseDevice return', result)
+        dbg_print(5, 'M3F20xm_CloseDevice return', result)
 
 if __name__ == '__main__':
 
@@ -326,23 +345,23 @@ if __name__ == '__main__':
     if 0:
         adc.start()
         for i in range(10):
-            print('------- loop', i)
+            dbg_print(4, '------- loop', i)
             v = adc.read()
-            print('data size', len(v))
-            print('data mean', np.mean(v))
+            dbg_print(4, 'data size', len(v))
+            dbg_print(4, 'data mean', np.mean(v))
             time.sleep(0.1)
         adc.stop()
 
-        print('------- loop ends')
+        dbg_print(4, '------- loop ends')
         v = adc.read()
-        print('data size', len(v))
-        print('data mean', np.mean(v))
+        dbg_print(4, 'data size', len(v))
+        dbg_print(4,'data mean', np.mean(v))
 
     if 0:
         # waiting Ctrl-C in a while loop
         while True:
             time.sleep(10)
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+            dbg_print(4, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
             pass
 
     adc.close()
