@@ -164,7 +164,7 @@ M3F20xm_GetFIFOLeft.restype = c_bool
 
 # Read all register values in the device
 # prototype: bool M3F20xm_ReadAllReg(BYTE byIndex, BYTE* pbyValue)
-# Note: pbyValue: point the the register values, must be 47 bytes long, 
+# Note: pbyValue: point to the the register values, must be 47 bytes long, 
 #       corresponding to registers 0x01~0x2F
 M3F20xm_ReadAllReg = adc_dll.M3F20xm_ReadAllReg
 M3F20xm_ReadAllReg.argtypes = [c_ubyte, POINTER(c_ubyte)]
@@ -172,7 +172,7 @@ M3F20xm_ReadAllReg.restype = c_bool
 
 # Update all register values in the device
 # prototype: bool M3F20xm_WriteAllReg(BYTE byIndex, BYTE* pbyValue)
-# Note: pbyValue: point the the register values, must be 47 bytes long,
+# Note: pbyValue: point to the the register values, must be 47 bytes long,
 #       corresponding to registers 0x01~0x2F
 M3F20xm_WriteAllReg = adc_dll.M3F20xm_WriteAllReg
 M3F20xm_WriteAllReg.argtypes = [c_ubyte, POINTER(c_ubyte)]
@@ -204,6 +204,7 @@ class M3F20xmADC:
     # Note: This interface give user a non-ctypes way to use the ADC.
     REG_LIST_LENGTH = 47
     SERIAL_NUMBER_LENGTH = 10   # include \0
+    n_channels = 8
 
     def __init__(self):
         self.device_number = None
@@ -289,7 +290,7 @@ class M3F20xmADC:
         self.adc_config = adc_config
 
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
-        M3F20xm_ReadAllReg(device_number, reg_list)
+        #M3F20xm_ReadAllReg(device_number, reg_list)
         self.reg_list = reg_list
 
     def status(self):
@@ -310,12 +311,20 @@ class M3F20xmADC:
 
     def config(self, **kwargs):
         # refer to ADC_CONFIG in M3F20xm.py for kwargs
+        if not kwargs:
+            return
         adc_config = self.adc_config
-        if kwargs:
-            for k, v in kwargs.items():
-                setattr(adc_config, k, v)
-            result = M3F20xm_ADCSetConfig(self.device_number, byref(adc_config))
+        valid_keys = dict(adc_config._fields_).keys()
+        for k, v in kwargs.items():
+            if k not in valid_keys:
+                raise KeyError(f'Invalid config key "{k}".')
+            setattr(adc_config, k, v)
+        result = M3F20xm_ADCSetConfig(self.device_number, byref(adc_config))
+
+    def get_config(self):
+        adc_config = self.adc_config
         result = M3F20xm_ADCGetConfig(self.device_number, byref(adc_config))
+        dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
         return adc_config
 
     def get_register(self):
@@ -325,42 +334,53 @@ class M3F20xmADC:
         return reg_list
 
     def set_register(self, reg_list):
+        if isinstance(reg_list, str) and reg_list == "reset":
+            # Note: reg 0x2F DEVICE_ID is said to be 0x31 in the manual
+            #       but it is actually 0x22 in the device (AD7606C).
+            reg_list = [
+                0x00, 0x08, 0x33, 0x33, 0x33, 0x33, 0xFF, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22
+            ]
         # reg_list must be a list of 47 unsigned byte intergers
         assert len(reg_list) == self.REG_LIST_LENGTH
         for i, v in enumerate(reg_list):
+            #dbg_print(4, 'i, v =', i, v)
             self.reg_list[i] = v
-        M3F20xm_WriteAllReg(self.device_number, reg_list)
-        return self.get_register()
+        M3F20xm_WriteAllReg(self.device_number, self.reg_list)
 
     def show_config(self):
         # show config in user friendly way
         conf = self.adc_config
         print("ADC_CONFIG:")
         print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
-        print("    Trigger mode:",
+        print("    Trigger mode      :",
             {
                 0: 'by GPIO, one sample per event',
                 1: 'period, one sample per period',
                 2: 'by GPIO then period',
                 3: 'by voltage compare then period'
             }[conf.byADCOptions & 0x03])
-        print("    Trigger edge:", 
+        print("    Trigger edge      :", 
               {
                   0: 'falling',
                   1: 'rising',
                   2: 'both'
               }[(conf.byADCOptions >> 2) & 0x03])
-        print("    Trigger compare:",
+        print("    Trigger compare   :",
               {
-                  0: 'greater or equal than',
-                  1: 'less or equal than'
+                  0: 'greater or equal',
+                  1: 'less or equal'
               }[(conf.byADCOptions >> 4) & 0x01])
         print("    Sample period unit:",
               {
                   0: '1 us',
                   1: '1 ms'
               }[(conf.byADCOptions >> 5) & 0x01])
-        print("    Trigger status", 
+        print("    Trigger status    :", 
               {
                   0: 'stopped',
                   1: 'on'
@@ -385,8 +405,20 @@ class M3F20xmADC:
         print(f"  CONFIG:")
         print(f"    STATUS_HEADER : {reg(0x02)>>6 & 0x01}")
         print(f"    EXT_OS_CLOCK  : {reg(0x02)>>5 & 0x01}")
-        print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03}")
-        print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03}")
+        dout_fmt_st = {
+            0b00: '1 D_outx',
+            0b01: '2 D_outx',
+            0b10: '4 D_outx',
+            0b11: '8 D_outx'
+        }
+        print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03} ({dout_fmt_st[reg(0x02)>>3 & 0x03]}))")
+        op_mode_st = {
+            0b00: 'normal',
+            0b01: 'standby',
+            0b10: 'autostandby',
+            0b11: 'shutdown'
+        }
+        print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03} ({op_mode_st[reg(0x02)>>0 & 0x03]}))")
         print(f"  Input range (4bits):")
         rginfo = {
             0b0000: "±2.5 V single-ended",
@@ -503,19 +535,19 @@ class M3F20xmADC:
         # Note: lpBuffer: buffer for data
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
-        n_channel = 8
-        dwBuffSize = n_channel * 1024
-        lpBuffer = (c_ushort * dwBuffSize)()
+        dwBuffSize = 2 * self.n_channels * 1024
+        lpBuffer = (c_ushort * (dwBuffSize // 2))()
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
         dbg_print(5, 'M3F20xm_ReadFIFO return', result)
         dbg_print(5, f"pdwRealSize: {pdwRealSize.value}")
+        arr = array.array('H', lpBuffer[:(pdwRealSize.value // 2)])
         # data left
         pwdBuffSize = c_ulong(0)
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
         dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
         dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
-        return array.array('H', lpBuffer[:n_channel * pdwRealSize.value])
+        return arr, pwdBuffSize.value // 2
 
     def close(self):
         # close device
