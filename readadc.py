@@ -48,6 +48,12 @@ class M3F20xmADC:
 
         device_number = M3F20xm_OpenDevice()
         if device_number == 0xFF:
+            # try to close the device first
+            M3F20xm_CloseDevice(0)
+            time.sleep(0.1)  
+            device_number = M3F20xm_OpenDevice()
+
+        if device_number == 0xFF:
             print("Failed to open device. e.g. device not plugged in or been used by other program.")
             self.ready = False
             # raise an OSError exception
@@ -137,6 +143,125 @@ class M3F20xmADC:
         M3F20xm_WriteAllReg(self.device_number, reg_list)
         return self.get_register()
 
+    def show_config(self):
+        # show config in user friendly way
+        conf = self.adc_config
+        print("ADC_CONFIG:")
+        print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
+        print("    Trigger mode:",
+            {
+                0: 'by GPIO, one sample per event',
+                1: 'period, one sample per period',
+                2: 'by GPIO then period',
+                3: 'by voltage compare then period'
+            }[conf.byADCOptions & 0x03])
+        print("    Trigger edge:", 
+              {
+                  0: 'falling',
+                  1: 'rising',
+                  2: 'both'
+              }[(conf.byADCOptions >> 2) & 0x03])
+        print("    Trigger compare:",
+              {
+                  0: 'greater or equal than',
+                  1: 'less or equal than'
+              }[(conf.byADCOptions >> 4) & 0x01])
+        print("    Sample period unit:",
+              {
+                  0: '1 us',
+                  1: '1 ms'
+              }[(conf.byADCOptions >> 5) & 0x01])
+        print("    Trigger status", 
+              {
+                  0: 'stopped',
+                  1: 'on'
+              }[(conf.byADCOptions >> 7) & 0x01])
+        print(f"  byGPIO      = {conf.byGPIO} ({hex(conf.byGPIO)})")
+        print(f"    GPIO direction (0=output, 1=input):"
+              f"{conf.byGPIO & 0x0F : 04b} (port 4~1)")
+        print(f"    GPIO voltage level (0=low, 1=high):"
+              f"{(conf.byGPIO >> 4) & 0x0F : 04b} (port 4~1)")
+        print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
+        print(f"  wTrigVol    = {conf.wTrigVol} (trigger voltage in mV)")
+        print(f"  dwPeriod    = {conf.dwPeriod} (sampling period)")
+        print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
+        print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
+
+    def show_reg(self):
+        reg = lambda n: self.reg_list[n-1]
+        print("Register list:")
+        print(f"  RESET_DETECT : {reg(0x01)>>7 & 0x01}")
+        print(f"  DIGITAL_ERROR: {reg(0x01)>>6 & 0x01}")
+        print(f"  OPEN_DETECTED: {reg(0x01)>>5 & 0x01}")
+        print(f"  CONFIG:")
+        print(f"    STATUS_HEADER : {reg(0x02)>>6 & 0x01}")
+        print(f"    EXT_OS_CLOCK  : {reg(0x02)>>5 & 0x01}")
+        print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03}")
+        print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03}")
+        print(f"  Input range (0~15):")
+        print(f"    CH1: {reg(0x03)>>0 & 0x0F}")
+        print(f"    CH2: {reg(0x03)>>4 & 0x0F}")
+        print(f"    CH3: {reg(0x04)>>0 & 0x0F}")
+        print(f"    CH4: {reg(0x04)>>4 & 0x0F}")
+        print(f"    CH5: {reg(0x05)>>0 & 0x0F}")
+        print(f"    CH6: {reg(0x05)>>4 & 0x0F}")
+        print(f"    CH7: {reg(0x06)>>0 & 0x0F}")
+        print(f"    CH8: {reg(0x06)>>4 & 0x0F}")
+        print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1)")
+        print("  Oversampling:")
+        print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
+        print(f"    OS_RATIO: {reg(0x08)>>0 & 0x0F}")
+        print("  Input gain (0~63):")
+        print(f"    CH1: {reg(0x09) & 0x3F}")
+        print(f"    CH2: {reg(0x0A) & 0x3F}")
+        print(f"    CH3: {reg(0x0B) & 0x3F}")
+        print(f"    CH4: {reg(0x0C) & 0x3F}")
+        print(f"    CH5: {reg(0x0D) & 0x3F}")
+        print(f"    CH6: {reg(0x0E) & 0x3F}")
+        print(f"    CH7: {reg(0x0F) & 0x3F}")
+        print(f"    CH8: {reg(0x10) & 0x3F}")
+        print(f"  Input offset (0~255):")
+        print(f"    CH1: {reg(0x11)}")
+        print(f"    CH2: {reg(0x12)}")
+        print(f"    CH3: {reg(0x13)}")
+        print(f"    CH4: {reg(0x14)}")
+        print(f"    CH5: {reg(0x15)}")
+        print(f"    CH6: {reg(0x16)}")
+        print(f"    CH7: {reg(0x17)}")
+        print(f"    CH8: {reg(0x18)}")
+        print(f"  Input phase correction (0~255):")
+        print(f"    CH1: {reg(0x19)}")
+        print(f"    CH2: {reg(0x1A)}")
+        print(f"    CH3: {reg(0x1B)}")
+        print(f"    CH4: {reg(0x1C)}")
+        print(f"    CH5: {reg(0x1D)}")
+        print(f"    CH6: {reg(0x1E)}")
+        print(f"    CH7: {reg(0x1F)}")
+        print(f"    CH8: {reg(0x20)}")
+        print("  Error flags:")
+        print(f"    INTERFACE_CHECK_EN    : {reg(0x21)>>7 & 0x01}")
+        print(f"    CLK_FS_OS_COUNTER_EN  : {reg(0x21)>>6 & 0x01}")
+        print(f"    BUSY_STUCK_HIGH_ERR_EN: {reg(0x21)>>5 & 0x01}")
+        print(f"    SPI_READ_ERR_EN       : {reg(0x21)>>4 & 0x01}")
+        print(f"    SPI_WRITE_ERR_EN      : {reg(0x21)>>3 & 0x01}")
+        print(f"    INT_CRC_ERR_EN        : {reg(0x21)>>2 & 0x01}")
+        print(f"    MM_CRC_ERR_EN         : {reg(0x21)>>1 & 0x01}")
+        print(f"    ROM_CRC_ERR_EN        : {reg(0x21)>>0 & 0x01}")
+        print(f"    BUSY_STUCK_HIGH_ERR   : {reg(0x22)>>5 & 0x01}")
+        print(f"    SPI_READ_ERR          : {reg(0x22)>>4 & 0x01}")
+        print(f"    SPI_WRITE_ERR         : {reg(0x22)>>3 & 0x01}")
+        print(f"    INT_CRC_ERR           : {reg(0x22)>>2 & 0x01}")
+        print(f"    MM_CRC_ERR            : {reg(0x22)>>1 & 0x01}")
+        print(f"    ROM_CRC_ERR           : {reg(0x22)>>0 & 0x01}")
+        print(f"  Channel open detect enable: {reg(0x23):08b} (CH 8~1)")
+        print(f"  Channel open detected     : {reg(0x24):08b} (CH 8~1)")
+        # ...
+        print(f"  OPEN_DETECT_QUEUE: {reg(0x2C)}")
+        print(f"  FS_CLK_COUNTER   : {reg(0x2D)}")
+        print(f"  OS_CLK_COUNTER   : {reg(0x2E)}")
+        print(f"  ID               : {reg(0x2F) >> 4:X}")
+        print(f"  SILICON_REVISION : {reg(0x2F) & 0x0F:X}")
+
     def sampling(self):
         # read a ADC sample data
         SampleFrameType = c_ushort * 8
@@ -187,22 +312,23 @@ if __name__ == '__main__':
     adc = M3F20xmADC()
     adc.sampling()
 
-    adc.start()
-    for i in range(10):
-        print('------- loop', i)
+    adc.show_config()
+    adc.show_reg()
+
+    if 0:
+        adc.start()
+        for i in range(10):
+            print('------- loop', i)
+            v = adc.read()
+            print('data size', len(v))
+            print('data mean', np.mean(v))
+            time.sleep(0.1)
+        adc.stop()
+
+        print('------- loop ends')
         v = adc.read()
         print('data size', len(v))
         print('data mean', np.mean(v))
-        time.sleep(0.1)
-    adc.stop()
-
-    print('------- loop ends')
-    v = adc.read()
-    print('data size', len(v))
-    print('data mean', np.mean(v))
-
-    v = adc.read()
-    print(np.mean(v))
 
     if 0:
         # waiting Ctrl-C in a while loop
