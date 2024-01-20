@@ -3,6 +3,8 @@
 # Run: python readadc.py
 
 import time
+import array
+import numpy as np
 from ctypes import (
     byref, create_string_buffer
 )
@@ -144,7 +146,36 @@ class M3F20xmADC:
         print("ADC sample data:")
         for v in values:
             print(f"    {v} = ({hex(v)})")
-        return values
+        return array.array('H', values)
+
+    def start(self):
+        result = M3F20xm_InitFIFO(self.device_number)
+        print('M3F20xm_InitFIFO return', result)
+        result = M3F20xm_ADCStart(self.device_number)
+        print('M3F20xm_ADCStart return', result)
+
+    def stop(self):
+        result = M3F20xm_ADCStop(self.device_number)
+        print('M3F20xm_ADCStop return', result)
+
+    def read(self):
+        # read all data in FIFO
+        # Note: lpBuffer: buffer for data
+        #       dwBuffSize: requested data length
+        #       pdwRealSize: actual data length 
+        n_channel = 8
+        dwBuffSize = n_channel * 1024
+        lpBuffer = (c_ushort * dwBuffSize)()
+        pdwRealSize = c_ulong(0)
+        result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
+        print('M3F20xm_ReadFIFO return', result)
+        print(f"pdwRealSize: {pdwRealSize.value}")
+        # data left
+        pwdBuffSize = c_ulong(0)
+        result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
+        print('M3F20xm_GetFIFOLeft return', result)
+        print(f"Data still in buffer: {pwdBuffSize.value}")
+        return array.array('H', lpBuffer[:n_channel * pdwRealSize.value])
 
     def close(self):
         # close device
@@ -155,7 +186,24 @@ if __name__ == '__main__':
 
     adc = M3F20xmADC()
     adc.sampling()
-    
+
+    adc.start()
+    for i in range(10):
+        print('------- loop', i)
+        v = adc.read()
+        print('data size', len(v))
+        print('data mean', np.mean(v))
+        time.sleep(0.1)
+    adc.stop()
+
+    print('------- loop ends')
+    v = adc.read()
+    print('data size', len(v))
+    print('data mean', np.mean(v))
+
+    v = adc.read()
+    print(np.mean(v))
+
     if 0:
         # waiting Ctrl-C in a while loop
         while True:
