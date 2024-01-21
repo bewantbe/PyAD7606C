@@ -347,7 +347,7 @@ class M3F20xmADC:
                 'wTrigVol'    : 0x00,
                 'wPeriod'     : 0x02,
                 'dwCycleCnt'  : 0x00,
-                'dwMaxCycles' : 0x00,
+                'dwMaxCycles' : 6000000,
             }
         if not kwargs:
             return
@@ -611,12 +611,12 @@ class M3F20xmADC:
         result = M3F20xm_ADCStop(self.device_number)
         dbg_print(5, 'M3F20xm_ADCStop return', result)
 
-    def read(self):
+    def read(self, n_max_frames):
         # read all data in FIFO
         # Note: lpBuffer: buffer for data
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
-        dwBuffSize = 2 * self.n_channels * 1024
+        dwBuffSize = 2 * self.n_channels * n_max_frames
         lpBuffer = (c_ushort * (dwBuffSize // 2))()
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
@@ -628,7 +628,7 @@ class M3F20xmADC:
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
         dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
         dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
-        return arr, pwdBuffSize.value // 2
+        return arr, pwdBuffSize.value // 2 // self.n_channels
 
     def close(self):
         # close device
