@@ -1,5 +1,6 @@
 # Python wrapper for USB2DaqsB.dll
 
+import math
 import time
 import array
 from ctypes import (
@@ -200,20 +201,40 @@ def dbg_print(level, *p, **keys):
     level_str = {1:'Error', 2:'Warning', 3:'Hint', 4:'Message', 5:'Verbose'}
     print(level_str[level] + ':', *p, **keys)
 
+def pretty_num_unit(v, n_prec = 4):
+    # print 100000 as 100k, etc.
+    if v == 0:
+        return '0'
+        #return f'%.{n_prec}f'%(v,)
+    scale_st = {
+        -1:'m', -2:'u', -3:'n', -4:'p', -5:'f', -6:'a',
+        0:'', 1:'k', 2:'M', 3:'G', 4:'T', 5:'P', 6:'E'
+    }
+    sign = -1 if v < 0 else 1
+    v = v * sign
+    scale = int(math.floor(math.log(v) / math.log(1000.0)))
+    if scale > 6:
+        scale = 6
+    if scale < -6:
+        scale = -6
+    v = v * 1000.0 ** (-scale)
+    st = f'%.{n_prec}g%s'%(v, scale_st[scale])
+    return st
+
 class M3F20xmADC:
     # Note: This interface give user a non-ctypes way to use the ADC.
     REG_LIST_LENGTH = 47
     SERIAL_NUMBER_LENGTH = 10   # include \0
     n_channels = 8
 
-    def __init__(self):
+    def __init__(self, reset = False):
         self.device_number = None
         self.serial_number = None
         self.version_string = {}
         self.adc_config = None
         self.reg_list = None
         self.ready = False
-        self.init()
+        self.init(reset)
 
     # Define the callback function
     def usb_ready_callback(iDevIndex, iDevStatus):
@@ -224,7 +245,7 @@ class M3F20xmADC:
             print(3, "Device plugged in.")
         return True
     
-    def init(self):
+    def init(self, reset):
         # Convert the Python callback function to a C callback function
         USB_READY_CALLBACK = M3F20xm_USB_READY_CALLBACK(self.usb_ready_callback)
 
@@ -232,17 +253,17 @@ class M3F20xmADC:
         result = M3F20xm_SetUSBNotify(True, USB_READY_CALLBACK)
         dbg_print(5, f"M3F20xm_SetUSBNotify return {result}.")
 
+        if reset:
+            # try to close the device first
+            time.sleep(0.1)
+            M3F20xm_CloseDevice(0)
+            time.sleep(0.1)
+
         # wait a while for the device to be ready
         # 0.04 second is at the boundary of success and failure, so we choose 0.1 second
-        time.sleep(0.1)  
+        time.sleep(0.1)
 
         device_number = M3F20xm_OpenDevice()
-        if device_number == 0xFF:
-            # try to close the device first
-            M3F20xm_CloseDevice(0)
-            time.sleep(0.1)  
-            device_number = M3F20xm_OpenDevice()
-
         if device_number == 0xFF:
             dbg_print(1, "Failed to open device. e.g. device not plugged in or been used by other program.")
             self.ready = False
@@ -255,6 +276,8 @@ class M3F20xmADC:
 
         ver_buffer_size = 256  # >= 50
         ver_buffer = create_string_buffer(ver_buffer_size)
+
+        time.sleep(0.1)
 
         # loop to query version information
         for i_type in [0, 1, 2]:
@@ -293,6 +316,11 @@ class M3F20xmADC:
         #M3F20xm_ReadAllReg(device_number, reg_list)
         self.reg_list = reg_list
 
+        if reset:
+            # reset the device as hard as possible
+            self.config('reset')
+            self.set_register('reset')
+
     def status(self):
         # get serial number
         serial_buffer = create_string_buffer(self.SERIAL_NUMBER_LENGTH)
@@ -309,8 +337,18 @@ class M3F20xmADC:
         print(f'Serial Number: {serial_number}')
         return result, serial_number
 
-    def config(self, **kwargs):
+    def config(self, *set_st, **kwargs):
         # refer to ADC_CONFIG in M3F20xm.py for kwargs
+        if (len(set_st) > 0) and (set_st[0] == 'reset'):
+            kwargs = {
+                'byADCOptions': 0x11,
+                'byGPIO'      : 0xFF,
+                'byActived'   : 0x00,
+                'wTrigVol'    : 0x00,
+                'wPeriod'     : 0x02,
+                'dwCycleCnt'  : 0x00,
+                'dwMaxCycles' : 0x00,
+            }
         if not kwargs:
             return
         adc_config = self.adc_config
@@ -357,43 +395,67 @@ class M3F20xmADC:
         t_cnt = self.adc_config.wPeriod
         return t_unit * t_cnt
 
+    def set_sampling_interval(self, t_intv):
+        # use second as the unit, will choose a closest value
+        adc_opt = self.adc_config.byADCOptions
+        if t_intv < 1e-3:
+            # set to us mode, i.e. bit 5 to 0
+            adc_opt &= 0xDF
+            tick = int(t_intv * 1e6 + 0.5)
+        else:
+            # set to ms mode, i.e. bit 5 to 1
+            adc_opt |= 0x20
+            tick = int(t_intv * 1e3 + 0.5)
+        self.config(byADCOptions = adc_opt, wPeriod = tick)
+
+    def set_sampling_rate(self, sr, t_total = None):
+        # sr: sampling rate in Hz
+        # t_total: total sampling time in second, None means no limit
+        self.set_sampling_interval(1.0 / sr)
+        t_intv = self.get_sampling_interval()
+        if t_total is not None:
+            n_cycle = int(1.0 / t_intv * t_total + 0.5)
+            self.config(dwCycleCnt = 0, dwMaxCycles = n_cycle)
+        else:
+            self.config(dwCycleCnt = 0, dwMaxCycles = 0)
+
     def show_config(self):
         # show config in user friendly way
         conf = self.adc_config
         print("ADC_CONFIG:")
         print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
-        print("    Trigger mode      :",
+        print("    [1:0] Trigger mode      :",
             {
                 0: 'by GPIO, one sample per event',
                 1: 'period, one sample per period',
                 2: 'by GPIO then period',
                 3: 'by voltage compare then period'
             }[conf.byADCOptions & 0x03])
-        print("    Trigger edge      :", 
+        print("    [3:2] Trigger edge      :", 
               {
                   0: 'falling',
                   1: 'rising',
                   2: 'both'
               }[(conf.byADCOptions >> 2) & 0x03])
-        print("    Trigger compare   :",
+        print("    [4]   Trigger compare   :",
               {
                   0: 'greater or equal',
                   1: 'less or equal'
               }[(conf.byADCOptions >> 4) & 0x01])
-        print("    Sample period unit:",
+        print("    [5]   Sample period unit:",
               {
                   0: '1 us',
                   1: '1 ms'
               }[(conf.byADCOptions >> 5) & 0x01])
-        print("    Trigger status    :", 
+        print("    [7]   Trigger status    :", 
               {
                   0: 'stopped',
                   1: 'on'
               }[(conf.byADCOptions >> 7) & 0x01])
         print(f"  byGPIO      = {conf.byGPIO} ({hex(conf.byGPIO)})")
-        print(f"    GPIO direction (0=output, 1=input):"
+        print(f"    [3:0] GPIO direction (0=output, 1=input):"
               f"{conf.byGPIO & 0x0F :04b} (port 4~1)")
-        print(f"    GPIO voltage level (0=low, 1=high):"
+        print(f"    [7:4] GPIO voltage level (0=low, 1=high):"
               f"{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
         print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
         #print(f"  byReserved  = {conf.byReserved:08b} (reserved)")
@@ -402,8 +464,20 @@ class M3F20xmADC:
         #print(f"  dwReserved1 = {conf.dwReserved1} (reserved)")
         print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
         print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
+        t_intv = self.get_sampling_interval()
+        print(f"  Sampling frequency: {pretty_num_unit(1.0/t_intv)}Hz.")
+        print(f"  Duration: {t_intv*conf.dwMaxCycles:.6g} s.")
 
-    def show_reg(self):
+    def show_reg(self, simple = False):
+        if simple:
+            reg_list = list(self.get_register())
+            print('reg:')
+            for ii in range((len(reg_list)-1)//8 + 1):
+                for jj in range(min(8, len(reg_list)-ii*8)):
+                    print(f"0x{reg_list[ii*8+jj]:02X}", end=' ')
+                print('')
+            print('')
+            return
         reg = lambda n: self.reg_list[n-1]
         print("Register list:")
         print(f"  RESET_DETECT : {reg(0x01)>>7 & 0x01}")

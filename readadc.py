@@ -10,34 +10,27 @@ from M3F20xm import M3F20xmADC, dbg_print
 if __name__ == '__main__':
 
     t0 = time.time()
-    adc = M3F20xmADC()    # cost about 2~3 seconds
+    adc = M3F20xmADC(reset = False)    # cost about 0.1~3 seconds
     t1 = time.time()
     print('time cost: ', t1-t0, 's (open device)')
 
-    if 1:
+    if 0:
         conf = adc.get_config()
-        byADCOptions = conf.byADCOptions & (0xFF ^ 0x20) | 0x20
+        byADCOptions = conf.byADCOptions & (0xFF ^ 0x20)
         adc.config(byADCOptions = byADCOptions,
-                   wPeriod = 1000,
+                   wPeriod = 1600,
                    dwCycleCnt = 0,
-                   dwMaxCycles = 10)
+                   dwMaxCycles = 500)
 
         adc.set_register('reset')
 
-    if 0:
-        reg_list = list(adc.get_register()) + [0xff]
-        print('reg:')
-        for ii in range(6):
-            for jj in range(8):
-                print(f"0x{reg_list[ii*8+jj]:02X}", end=' ')
-            print('')
-        print('')
+    #adc.set_sampling_rate(44100, 1.0)
 
     if 1:
         print('')
-        adc.show_config()     # cost about 0.0011 seconds
-        #print('')
-        #adc.show_reg()        # cost about 0.0025 seconds
+        adc.show_config()            # cost about 0.0011 seconds
+        print('')
+        adc.show_reg(simple=True)    # cost about 0.0025 seconds
 
     if 0:
         t0 = time.time()
@@ -45,7 +38,7 @@ if __name__ == '__main__':
         t1 = time.time()
         print('time cost: ', t1-t0, 's (single sampling)')
 
-    if 1:
+    if 0:
         n_frame_total = 0
         n_continued_empty_frames = 0
         t_wait = 4 * adc.get_sampling_interval()
@@ -61,7 +54,7 @@ if __name__ == '__main__':
                 n_continued_empty_frames += 1
                 if n_continued_empty_frames > 1:
                     break
-                time.sleep(max(0.01, t_wait))
+                time.sleep(max(0.1, t_wait))
                 continue
             else:
                 n_continued_empty_frames = 0
