@@ -5,12 +5,16 @@ import time
 import array
 from ctypes import (
     CDLL, Structure, CFUNCTYPE, POINTER,
-    c_bool, c_ubyte, c_ushort, c_ulong, c_char_p,
+    c_bool, c_ubyte, c_ushort, c_short, c_int, c_ulong, c_char_p,
     byref, create_string_buffer
 )
 
+import os
+
+_cwd_ = os.path.dirname(os.path.abspath(__file__))
+
 # Load the USB2DaqsB.dll library
-usbadc_dll_path = './USB2DaqsB.dll'
+usbadc_dll_path = os.path.join(_cwd_, './USB2DaqsB.dll')
 adc_dll = CDLL(usbadc_dll_path)
 
 ## define C function prototype
@@ -101,7 +105,10 @@ M3F20xm_CloseDevice.restype = c_bool
 
 # prototype: bool M3F20xm_Verify(BYTE byIndex, BYTE* pResult)
 M3F20xm_Verify = adc_dll.M3F20xm_Verify
-M3F20xm_Verify.argtypes = [c_ubyte, POINTER(c_ubyte)]
+# old
+#M3F20xm_Verify.argtypes = [c_ubyte, POINTER(c_ubyte)]
+#M3F20xm_Verify.restype = c_bool
+M3F20xm_Verify.argtypes = [c_ubyte]
 M3F20xm_Verify.restype = c_bool
 
 # prototype: BYTE M3F20xm_GetSerialNo(BYTE byIndex, char* lpBuff)
@@ -153,7 +160,7 @@ M3F20xm_InitFIFO.restype = c_bool
 #       dwBuffSize: requested data length
 #       pdwRealSize: actual data length 
 M3F20xm_ReadFIFO = adc_dll.M3F20xm_ReadFIFO
-M3F20xm_ReadFIFO.argtypes = [c_ubyte, POINTER(c_ushort), c_ulong, POINTER(c_ulong)]
+M3F20xm_ReadFIFO.argtypes = [c_ubyte, POINTER(c_short), c_ulong, POINTER(c_ulong)]
 M3F20xm_ReadFIFO.restype = c_bool
 
 # Get unread FIFO length
@@ -182,7 +189,7 @@ M3F20xm_WriteAllReg.restype = c_bool
 #########################################################################
 # pythonic interface
 
-debug_level = 3
+debug_level = 5
 
 def dbg_print(level, *p, **keys):
     """
@@ -297,10 +304,13 @@ class M3F20xmADC:
         self.serial_number = serial_number
 
         # call M3F20xm_Verify
+        #verify_result = c_ubyte(0)
+        #result = M3F20xm_Verify(device_number, byref(verify_result))
+        #dbg_print(4, f"M3F20xm_Verify return {result}. Verify result: {verify_result.value}.")
         verify_result = c_ubyte(0)
-        result = M3F20xm_Verify(device_number, byref(verify_result))
-        dbg_print(4, f"M3F20xm_Verify return {result}. Verify result: {verify_result.value}.")
-        self.verify_result = verify_result.value
+        result = M3F20xm_Verify(device_number)
+        dbg_print(4, f"M3F20xm_Verify return {result}.")
+        self.verify_result = result
 
         # call M3F20xm_ADCGetConfig
         adc_config = ADC_CONFIG()
@@ -617,18 +627,20 @@ class M3F20xmADC:
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
         dwBuffSize = 2 * self.n_channels * n_max_frames
-        lpBuffer = (c_ushort * (dwBuffSize // 2))()
+        lpBuffer = (c_short * (dwBuffSize // 2))()
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
         dbg_print(5, 'M3F20xm_ReadFIFO return', result)
         dbg_print(5, f"pdwRealSize: {pdwRealSize.value}")
-        arr = array.array('H', lpBuffer[:(pdwRealSize.value // 2)])
-        # data left
+        arr = array.array('h', lpBuffer[:(pdwRealSize.value // 2)])
+        return arr
+
+    def get_fifo_frames_left(self):
         pwdBuffSize = c_ulong(0)
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
         dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
         dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
-        return arr, pwdBuffSize.value // 2 // self.n_channels
+        return pwdBuffSize.value // 2 // self.n_channels
 
     def close(self):
         # close device

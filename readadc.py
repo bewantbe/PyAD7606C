@@ -52,7 +52,8 @@ if __name__ == '__main__':
         while n_frame_total < max_cycles:
             ii += 1
             dbg_print(4, '------- loop', ii)
-            v, n_left = adc.read(1024)   # non-block
+            v = adc.read(1024)   # non-block
+            n_left = adc.get_fifo_frames_left()
             if len(v) == 0 and n_left == 0:
                 n_continued_empty_frames += 1
                 if n_continued_empty_frames > 3:
