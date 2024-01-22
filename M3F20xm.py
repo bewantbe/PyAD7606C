@@ -189,7 +189,7 @@ M3F20xm_WriteAllReg.restype = c_bool
 #########################################################################
 # pythonic interface
 
-debug_level = 5
+debug_level = 3
 
 def dbg_print(level, *p, **keys):
     """
@@ -428,6 +428,43 @@ class M3F20xmADC:
             self.config(dwCycleCnt = 0, dwMaxCycles = n_cycle)
         else:
             self.config(dwCycleCnt = 0, dwMaxCycles = 0)
+
+    def set_input_range(self, volt_range, ends='single'):
+        # volt_range: [min, max] in V
+        # ends = 'single' or 'diff'
+        v_table_bs = [2.5, 5.0, 6.25, 10.0, 12.5]  # bipolar single-ended
+        v_table_ps = [5, 10, 12.5]                 # positive single-ended
+        v_table_bd = [5, 10, 12.5, 20]             # bipolar differential
+        if volt_range[0] > volt_range[1]:
+            # swap
+            volt_range = [volt_range[1], volt_range[0]]
+        if ends == 'single':
+            if volt_range[0] < 0:
+                # bs type
+                vtb = v_table_bs
+                reg_offset = 0
+            else:
+                # ps type
+                vtb = v_table_ps
+                reg_offset = 5
+        elif ends == 'diff':
+            # bd type
+            vtb = v_table_bd
+            reg_offset = 8
+        volt_abs_max = max(abs(volt_range[0]), abs(volt_range[1]))
+        for i in range(len(vtb)):
+            print(f"i = {i}, v = {vtb[i]} vs {volt_abs_max}")
+            if volt_abs_max <= vtb[i]:
+                break
+        if (i >= len(vtb)) or (volt_abs_max > vtb[i]):
+            raise ValueError("Requested input voltage range out of ADC's specification.")
+        reg_range = reg_offset + i
+        reg = self.get_register()
+        reg[0x03-1] = reg_range | (reg_range << 4)
+        reg[0x04-1] = reg_range | (reg_range << 4)
+        reg[0x05-1] = reg_range | (reg_range << 4)
+        reg[0x06-1] = reg_range | (reg_range << 4)
+        self.set_register(reg)
 
     def show_config(self):
         # show config in user friendly way
