@@ -465,6 +465,8 @@ class M3F20xmADC:
         reg[0x05-1] = reg_range | (reg_range << 4)
         reg[0x06-1] = reg_range | (reg_range << 4)
         self.set_register(reg)
+        # TODO: convert read data according to the input voltage range
+        # TODO: add calibration input port.
 
     def show_config(self):
         # show config in user friendly way
