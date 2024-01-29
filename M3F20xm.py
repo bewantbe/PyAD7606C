@@ -232,7 +232,7 @@ class M3F20xmADC:
     # Note: This interface give user a non-ctypes way to use the ADC.
     REG_LIST_LENGTH = 47
     SERIAL_NUMBER_LENGTH = 10   # include \0
-    n_channels = 8
+    n_channel = 8
 
     def __init__(self, reset = False):
         self.device_number = None
@@ -665,7 +665,7 @@ class M3F20xmADC:
         # Note: lpBuffer: buffer for data
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
-        dwBuffSize = 2 * self.n_channels * n_max_frames
+        dwBuffSize = 2 * self.n_channel * n_max_frames
         lpBuffer = (c_short * (dwBuffSize // 2))()
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
@@ -679,7 +679,7 @@ class M3F20xmADC:
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
         dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
         dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
-        return pwdBuffSize.value // 2 // self.n_channels
+        return pwdBuffSize.value // 2 // self.n_channel
 
     def close(self):
         # close device
