@@ -7,7 +7,7 @@ import array
 from ctypes import (
     CDLL, Structure, CFUNCTYPE, POINTER,
     c_bool, c_ubyte, c_ushort, c_short, c_int, c_ulong, c_char_p,
-    byref, create_string_buffer
+    byref, create_string_buffer, cast
 )
 
 import os
@@ -174,7 +174,7 @@ M3F20xm_InitFIFO.restype = c_bool
 #       pdwRealSize: actual data length 
 # Note: return ture if successful, false if failed
 M3F20xm_ReadFIFO = adc_dll.M3F20xm_ReadFIFO
-M3F20xm_ReadFIFO.argtypes = [c_ubyte, POINTER(c_short), c_ulong, POINTER(c_ulong)]
+M3F20xm_ReadFIFO.argtypes = [c_ubyte, POINTER(c_ushort), c_ulong, POINTER(c_ulong)]
 M3F20xm_ReadFIFO.restype = c_bool
 
 # Get unread FIFO length
@@ -307,6 +307,7 @@ def AD7606C_ShowReg(reg_list, simple = False):
         return
 
     reg = lambda n: reg_list[n-1]
+    # AD7606C-16 Manual, p-p 57, Table 31.
     print("Register list:")
     print(f"  RESET_DETECT : {reg(0x01)>>7 & 0x01}")
     print(f"  DIGITAL_ERROR: {reg(0x01)>>6 & 0x01}")
@@ -355,7 +356,8 @@ def AD7606C_ShowReg(reg_list, simple = False):
     print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
     print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
     print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
-    print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1)")
+    # AD7606C-16 Manual, p-p 34, Table 18, Table 19
+    print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1) (25kHz or 220kHz)")
     print("  Oversampling:")
     print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
     print(f"    OS_RATIO: {reg(0x08)>>0 & 0x0F:04b} (x{1<<(reg(0x08)>>0 & 0x0F)})")
@@ -453,11 +455,48 @@ def AD7606C_VoltRangeGetReg(volt_range, ends='single'):
     # TODO: return true range, and return proper data value type
     return reg_range
 
+_ch_range_type = {
+    # ref. AD7606C-16 Manual, p-p 59, Table 34
+    # ref. AD7606C-16 Manual, p-p 30, ADC Transfer Function
+    0b0000: (c_short , 'h', -2.5,  2.5,  1),   # "±2.5 V single-ended",
+    0b0001: (c_short , 'h', -5.0,  5.0,  1),   # "±5   V single-ended",
+    0b0010: (c_short , 'h', -6.25, 6.25, 1),   # "±6.25V single-ended",
+    0b0011: (c_short , 'h', -10.0, 10.0, 1),   # "±10  V single-ended",
+    0b0100: (c_short , 'h', -12.5, 12.5, 1),   # "±12.5V single-ended",
+    0b0101: (c_ushort, 'H',  0.0,   5.0, 1),   # "0~ 5  V single-ended",
+    0b0110: (c_ushort, 'H',  0.0,  10.0, 1),   # "0~10  V single-ended",
+    0b0111: (c_ushort, 'H',  0.0,  12.5, 1),   # "0~12.5V single-ended",
+    0b1000: (c_short , 'h', -5.0,   5.0, 2),   # "±5   V differential",
+    0b1001: (c_short , 'h', -10.0, 10.0, 2),   # "±10  V differential",
+    0b1010: (c_short , 'h', -12.5, 12.5, 2),   # "±12.5V differential",
+    0b1011: (c_short , 'h', -20.0, 20.0, 2),   # "±20  V differential",
+    0b1100: (c_ushort, 'H', -2.5,  2.5,  0),   # "(not defined)",
+    0b1101: (c_ushort, 'H', -2.5,  2.5,  0),   # "(not defined)",
+    0b1110: (c_ushort, 'H', -2.5,  2.5,  0),   # "(not defined)",
+    0b1111: (c_ushort, 'H', -2.5,  2.5,  0),   # "(not defined)",
+}
+
+def AD7606C_ChRangeGetType(ch_range_code):
+    return _ch_range_type[ch_range_code]
+
+def AD7606C_ChRangeAdapter(ch_range_code):
+    ch_info = AD7606C_ChRangeGetType(ch_range_code)
+    # return sampling type for one, group, type code, lambda for conversion
+    ty1 = ch_info[0]
+    ty8 = ty1 * 8
+    typecode = ch_info[1]
+    if typecode == 'h':
+        fi2v = lambda i: i / 32768.0 * ch_info[3]
+    else: # typecode == 'H'
+        fi2v = lambda i: i / 65536.0 * ch_info[3]
+    return ty1, ty8, typecode, fi2v
+
 class M3F20xmADC:
     """Pythonic interface for M3F20xm interfaced ADC, mainly AD7606C."""
     REG_LIST_LENGTH = 47
     SERIAL_NUMBER_LENGTH = 10   # include \0
     n_channel = 8
+    _ty0up = POINTER(c_ushort)
 
     def __init__(self, reset = False):
         self.device_number = None
@@ -562,6 +601,8 @@ class M3F20xmADC:
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
         M3F20xm_ReadAllReg(device_number, reg_list)
         self.reg_list = reg_list
+
+        self.init_ch_range()
 
     def reset(self):
         # reset the device as hard as possible
@@ -676,6 +717,12 @@ class M3F20xmADC:
         else:
             self.config(dwCycleCnt = 0, dwMaxCycles = 0)
 
+    def init_ch_range(self):
+        # assume get ch 1 is enough
+        range_code = self.reg_list[0x03-1] & 0x0F
+        self.ty1, self.ty8, self.typecode, self.fi2v = \
+            AD7606C_ChRangeAdapter(range_code)
+
     def set_input_range(self, volt_range, ends='single'):
         reg_range = AD7606C_VoltRangeGetReg(volt_range, ends)
         reg = self.get_register()
@@ -685,7 +732,7 @@ class M3F20xmADC:
         reg[0x05-1] = reg_range | (reg_range << 4)
         reg[0x06-1] = reg_range | (reg_range << 4)
         self.set_register(reg)
-        # TODO: convert read data according to the input voltage range
+        self.init_ch_range()
         # TODO: add calibration input port.
 
     def show_config(self):
@@ -697,18 +744,22 @@ class M3F20xmADC:
 
     def one_sample(self):
         # read a ADC sample data
-        SampleFrameType = c_ushort * 8     # TODO: set by get_register
-        values = SampleFrameType()
-        result = M3F20xm_ADCRead(self.device_number, values)
+        values = (self.ty8)()
+        result = M3F20xm_ADCRead(self.device_number, cast(values, self._ty0up))
         dbg_print(5, f"M3F20xm_ADCRead return {result}.")
         dbg_print(4, "ADC sample data:")
         for v in values:
             dbg_print(4, f"    {v} = ({hex(v)})")
-        return array.array('H', values)
+        return array.array(self.typecode, values)
 
-    def start(self):
+    def start(self, n_max_frames):
         result = M3F20xm_InitFIFO(self.device_number)
         dbg_print(5, 'M3F20xm_InitFIFO return', result)
+        self.dwBuffSize = 2 * self.n_channel * n_max_frames
+        #self.lpBuffer   = (self.ty1 * (self.dwBuffSize // 2))()
+        self.lpBuffer_bytes = bytearray(self.dwBuffSize)
+        self.lpBuffer   = (c_ushort * (self.dwBuffSize // 2)) \
+                          .from_buffer(self.lpBuffer_bytes)
         self.b_adc_started = True
         result = M3F20xm_ADCStart(self.device_number)
         dbg_print(5, 'M3F20xm_ADCStart return', result)
@@ -719,7 +770,24 @@ class M3F20xmADC:
         dbg_print(5, 'M3F20xm_ADCStop return', result)
         self.b_adc_started = False
 
-    def read(self, n_max_frames):
+    def read(self, n_max_frames = None):
+        if n_max_frames is not None:
+            return self.readn(n_max_frames)
+        # read data in FIFO, might be a faster version
+        pdwRealSize = c_ulong(0)
+        result = M3F20xm_ReadFIFO(self.device_number,
+                                  self.lpBuffer,
+                                  self.dwBuffSize,
+                                  byref(pdwRealSize))
+        arr = array.array(self.typecode, self.lpBuffer_bytes[:pdwRealSize.value])
+        #print('size:', self.dwBuffSize, pdwRealSize.value, len(arr))
+        # we have few choices
+        #   (1) cast type when calling ReadFIFO, then pass buffer to array directly
+        #   (2) no cast when calling ReadFIFO, then pass buffer to array by bytes
+        #   (3) use bytearray and ctypes .from_buffer
+        return arr
+
+    def readn(self, n_max_frames):
         # read data in FIFO
         # Note: lpBuffer: buffer for data
         #       dwBuffSize: requested data length
