@@ -244,6 +244,215 @@ def pretty_num_unit(v, n_prec = 4):
     st = f'%.{n_prec}g%s'%(v, scale_st[scale])
     return st
 
+def M3F20xm_ShowConfig(conf):
+    # show config in an user friendly way
+    print("ADC_CONFIG:")
+    print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
+    print("    [1:0] Trigger mode      :",
+        {
+            0: 'by GPIO, one sample per event',
+            1: 'period, one sample per period',
+            2: 'by GPIO then period',
+            3: 'by voltage compare then period'
+        }[conf.byADCOptions & 0x03])
+    print("    [3:2] Trigger edge      :", 
+            {
+                0: 'falling',
+                1: 'rising',
+                2: 'both'
+            }[(conf.byADCOptions >> 2) & 0x03])
+    print("    [4]   Trigger compare   :",
+            {
+                0: 'greater or equal',
+                1: 'less or equal'
+            }[(conf.byADCOptions >> 4) & 0x01])
+    print("    [5]   Sample period unit:",
+            {
+                0: '1 us',
+                1: '1 ms'
+            }[(conf.byADCOptions >> 5) & 0x01])
+    print("    [7]   Trigger status    :", 
+            {
+                0: 'stopped',
+                1: 'on'
+            }[(conf.byADCOptions >> 7) & 0x01])
+    t_unit = 1e-3 if (conf.byADCOptions & 0x20) else 1e-6
+    t_cnt = conf.wPeriod
+    t_intv = t_unit * t_cnt
+    print(f"  byGPIO      = {conf.byGPIO} ({hex(conf.byGPIO)})")
+    print(f"    [3:0] GPIO direction (0=output, 1=input):"
+            f"{conf.byGPIO & 0x0F :04b} (port 4~1)")
+    print(f"    [7:4] GPIO voltage level (0=low, 1=high):"
+            f"{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
+    print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
+    print(f"  byReserved  = {conf.byReserved:08b} (reserved)")
+    print(f"  wTrigVol    = {conf.wTrigVol} (trigger voltage in mV)")
+    print(f"  wPeriod     = {conf.wPeriod} (sampling period)")
+    print(f"  wPreNum     = {conf.wPreNum} (pre-sampling number after trigger)")
+    print(f"  wReserved   = {conf.wReserved} (reserved)")
+    print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
+    print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
+    print(f"  dwReserved  = {conf.dwReserved} (reserved)")
+    print(f"  Sampling frequency: {pretty_num_unit(1.0/t_intv)}Hz.")
+    print(f"  Duration: {t_intv*conf.dwMaxCycles:.6g} s.")
+
+def AD7606C_ShowReg(reg_list, simple = False):
+    if simple:
+        print("Register list:")
+        for ii in range((len(reg_list)-1)//8 + 1):
+            for jj in range(min(8, len(reg_list)-ii*8)):
+                print(f"0x{reg_list[ii*8+jj]:02X}", end=' ')
+            print('')
+        print('')
+        return
+
+    reg = lambda n: reg_list[n-1]
+    print("Register list:")
+    print(f"  RESET_DETECT : {reg(0x01)>>7 & 0x01}")
+    print(f"  DIGITAL_ERROR: {reg(0x01)>>6 & 0x01}")
+    print(f"  OPEN_DETECTED: {reg(0x01)>>5 & 0x01}")
+    print(f"  CONFIG:")
+    print(f"    STATUS_HEADER : {reg(0x02)>>6 & 0x01}")
+    print(f"    EXT_OS_CLOCK  : {reg(0x02)>>5 & 0x01}")
+    dout_fmt_st = {
+        0b00: '1 D_outx',
+        0b01: '2 D_outx',
+        0b10: '4 D_outx',
+        0b11: '8 D_outx'
+    }
+    print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03} ({dout_fmt_st[reg(0x02)>>3 & 0x03]}))")
+    op_mode_st = {
+        0b00: 'normal',
+        0b01: 'standby',
+        0b10: 'autostandby',
+        0b11: 'shutdown'
+    }
+    print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03} ({op_mode_st[reg(0x02)>>0 & 0x03]}))")
+    print(f"  Input range (4bits):")
+    rginfo = {
+        0b0000: "±2.5 V single-ended",
+        0b0001: "±5   V single-ended",
+        0b0010: "±6.25V single-ended",
+        0b0011: "±10  V single-ended",
+        0b0100: "±12.5V single-ended",
+        0b0101: "0~ 5  V single-ended",
+        0b0110: "0~10  V single-ended",
+        0b0111: "0~12.5V single-ended",
+        0b1000: "±5   V differential",
+        0b1001: "±10  V differential",
+        0b1010: "±12.5V differential",
+        0b1011: "±20  V differential",
+        0b1100: "(not defined)",
+        0b1101: "(not defined)",
+        0b1110: "(not defined)",
+        0b1111: "(not defined)",
+    }
+    print(f"    CH1: {reg(0x03)>>0 & 0x0F:04b} ({rginfo[reg(0x03)>>0 & 0x0F]}))")
+    print(f"    CH2: {reg(0x03)>>4 & 0x0F:04b} ({rginfo[reg(0x03)>>4 & 0x0F]}))")
+    print(f"    CH3: {reg(0x04)>>0 & 0x0F:04b} ({rginfo[reg(0x04)>>0 & 0x0F]}))")
+    print(f"    CH4: {reg(0x04)>>4 & 0x0F:04b} ({rginfo[reg(0x04)>>4 & 0x0F]}))")
+    print(f"    CH5: {reg(0x05)>>0 & 0x0F:04b} ({rginfo[reg(0x05)>>0 & 0x0F]}))")
+    print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
+    print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
+    print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
+    print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1)")
+    print("  Oversampling:")
+    print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
+    print(f"    OS_RATIO: {reg(0x08)>>0 & 0x0F:04b} (x{1<<(reg(0x08)>>0 & 0x0F)})")
+    print("  Gain Register to Remove Gain Error Caused by External R_FILTER (0~63):")
+    print(f"    CH1: {reg(0x09) & 0x3F}")
+    print(f"    CH2: {reg(0x0A) & 0x3F}")
+    print(f"    CH3: {reg(0x0B) & 0x3F}")
+    print(f"    CH4: {reg(0x0C) & 0x3F}")
+    print(f"    CH5: {reg(0x0D) & 0x3F}")
+    print(f"    CH6: {reg(0x0E) & 0x3F}")
+    print(f"    CH7: {reg(0x0F) & 0x3F}")
+    print(f"    CH8: {reg(0x10) & 0x3F}")
+    print(f"  Offset Register to Remove External System Offset Errors (0~255):")
+    print(f"    CH1: {reg(0x11)}")
+    print(f"    CH2: {reg(0x12)}")
+    print(f"    CH3: {reg(0x13)}")
+    print(f"    CH4: {reg(0x14)}")
+    print(f"    CH5: {reg(0x15)}")
+    print(f"    CH6: {reg(0x16)}")
+    print(f"    CH7: {reg(0x17)}")
+    print(f"    CH8: {reg(0x18)}")
+    print(f"  Phase delay from 0 µs to 255 µs in steps of 1 µs. (0~255):")
+    print(f"    CH1: {reg(0x19)}")
+    print(f"    CH2: {reg(0x1A)}")
+    print(f"    CH3: {reg(0x1B)}")
+    print(f"    CH4: {reg(0x1C)}")
+    print(f"    CH5: {reg(0x1D)}")
+    print(f"    CH6: {reg(0x1E)}")
+    print(f"    CH7: {reg(0x1F)}")
+    print(f"    CH8: {reg(0x20)}")
+    print("  Error flags:")
+    print(f"    INTERFACE_CHECK_EN    : {reg(0x21)>>7 & 0x01}")
+    print(f"    CLK_FS_OS_COUNTER_EN  : {reg(0x21)>>6 & 0x01}")
+    print(f"    BUSY_STUCK_HIGH_ERR_EN: {reg(0x21)>>5 & 0x01}")
+    print(f"    SPI_READ_ERR_EN       : {reg(0x21)>>4 & 0x01}")
+    print(f"    SPI_WRITE_ERR_EN      : {reg(0x21)>>3 & 0x01}")
+    print(f"    INT_CRC_ERR_EN        : {reg(0x21)>>2 & 0x01}")
+    print(f"    MM_CRC_ERR_EN         : {reg(0x21)>>1 & 0x01}")
+    print(f"    ROM_CRC_ERR_EN        : {reg(0x21)>>0 & 0x01}")
+    print(f"    BUSY_STUCK_HIGH_ERR   : {reg(0x22)>>5 & 0x01}")
+    print(f"    SPI_READ_ERR          : {reg(0x22)>>4 & 0x01}")
+    print(f"    SPI_WRITE_ERR         : {reg(0x22)>>3 & 0x01}")
+    print(f"    INT_CRC_ERR           : {reg(0x22)>>2 & 0x01}")
+    print(f"    MM_CRC_ERR            : {reg(0x22)>>1 & 0x01}")
+    print(f"    ROM_CRC_ERR           : {reg(0x22)>>0 & 0x01}")
+    print(f"  Channel open detect enable: {reg(0x23):08b} (CH 8~1)")
+    print(f"  Channel open detected     : {reg(0x24):08b} (CH 8~1)")
+    print("  DIAGNOSTIC_MUX")
+    print(f"    CH1: {reg(0x28)>>0 & 0x07}")
+    print(f"    CH2: {reg(0x28)>>3 & 0x07}")
+    print(f"    CH3: {reg(0x29)>>0 & 0x07}")
+    print(f"    CH4: {reg(0x29)>>3 & 0x07}")
+    print(f"    CH5: {reg(0x2A)>>0 & 0x07}")
+    print(f"    CH6: {reg(0x2A)>>3 & 0x07}")
+    print(f"    CH7: {reg(0x2B)>>0 & 0x07}")
+    print(f"    CH8: {reg(0x2B)>>3 & 0x07}")
+    print(f"  OPEN_DETECT_QUEUE: {reg(0x2C)}")
+    print(f"  FS_CLK_COUNTER   : {reg(0x2D)}")
+    print(f"  OS_CLK_COUNTER   : {reg(0x2E)}")
+    print(f"  ID               : {reg(0x2F) >> 4:X}")
+    print(f"  SILICON_REVISION : {reg(0x2F) & 0x0F:X}")
+    print('')
+
+def AD7606C_VoltRangeGetReg(volt_range, ends='single'):
+    # volt_range: [min, max] in V
+    # ends = 'single' or 'diff'
+    # TODO: move this to independent function, allow set channel differently
+    v_table_bs = [2.5, 5.0, 6.25, 10.0, 12.5]  # bipolar single-ended
+    v_table_ps = [5, 10, 12.5]                 # positive single-ended
+    v_table_bd = [5, 10, 12.5, 20]             # bipolar differential
+    if volt_range[0] > volt_range[1]:
+        # swap
+        volt_range = [volt_range[1], volt_range[0]]
+    if ends == 'single':
+        if volt_range[0] < 0:
+            # bs type
+            vtb = v_table_bs
+            reg_offset = 0
+        else:
+            # ps type
+            vtb = v_table_ps
+            reg_offset = 5
+    elif ends == 'diff':
+        # bd type
+        vtb = v_table_bd
+        reg_offset = 8
+    volt_abs_max = max(abs(volt_range[0]), abs(volt_range[1]))
+    for i in range(len(vtb)):
+        print(f"i = {i}, v = {vtb[i]} vs {volt_abs_max}")
+        if volt_abs_max <= vtb[i]:
+            break
+    if (i >= len(vtb)) or (volt_abs_max > vtb[i]):
+        raise ValueError("Requested input voltage range out of ADC's specification.")
+    reg_range = reg_offset + i
+    # TODO: return true range, and return proper data value type
+    return reg_range
+
 class M3F20xmADC:
     """Pythonic interface for M3F20xm interfaced ADC, mainly AD7606C."""
     REG_LIST_LENGTH = 47
@@ -468,36 +677,7 @@ class M3F20xmADC:
             self.config(dwCycleCnt = 0, dwMaxCycles = 0)
 
     def set_input_range(self, volt_range, ends='single'):
-        # volt_range: [min, max] in V
-        # ends = 'single' or 'diff'
-        # TODO: move this to independent function, allow set channel differently
-        v_table_bs = [2.5, 5.0, 6.25, 10.0, 12.5]  # bipolar single-ended
-        v_table_ps = [5, 10, 12.5]                 # positive single-ended
-        v_table_bd = [5, 10, 12.5, 20]             # bipolar differential
-        if volt_range[0] > volt_range[1]:
-            # swap
-            volt_range = [volt_range[1], volt_range[0]]
-        if ends == 'single':
-            if volt_range[0] < 0:
-                # bs type
-                vtb = v_table_bs
-                reg_offset = 0
-            else:
-                # ps type
-                vtb = v_table_ps
-                reg_offset = 5
-        elif ends == 'diff':
-            # bd type
-            vtb = v_table_bd
-            reg_offset = 8
-        volt_abs_max = max(abs(volt_range[0]), abs(volt_range[1]))
-        for i in range(len(vtb)):
-            print(f"i = {i}, v = {vtb[i]} vs {volt_abs_max}")
-            if volt_abs_max <= vtb[i]:
-                break
-        if (i >= len(vtb)) or (volt_abs_max > vtb[i]):
-            raise ValueError("Requested input voltage range out of ADC's specification.")
-        reg_range = reg_offset + i
+        reg_range = AD7606C_VoltRangeGetReg(volt_range, ends)
         reg = self.get_register()
         # all 8 channels are the same
         reg[0x03-1] = reg_range | (reg_range << 4)
@@ -509,179 +689,11 @@ class M3F20xmADC:
         # TODO: add calibration input port.
 
     def show_config(self):
-        # show config in user friendly way
-        # TODO: move this to independent function
-        conf = self.adc_config
-        print("ADC_CONFIG:")
-        print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
-        print("    [1:0] Trigger mode      :",
-            {
-                0: 'by GPIO, one sample per event',
-                1: 'period, one sample per period',
-                2: 'by GPIO then period',
-                3: 'by voltage compare then period'
-            }[conf.byADCOptions & 0x03])
-        print("    [3:2] Trigger edge      :", 
-              {
-                  0: 'falling',
-                  1: 'rising',
-                  2: 'both'
-              }[(conf.byADCOptions >> 2) & 0x03])
-        print("    [4]   Trigger compare   :",
-              {
-                  0: 'greater or equal',
-                  1: 'less or equal'
-              }[(conf.byADCOptions >> 4) & 0x01])
-        print("    [5]   Sample period unit:",
-              {
-                  0: '1 us',
-                  1: '1 ms'
-              }[(conf.byADCOptions >> 5) & 0x01])
-        print("    [7]   Trigger status    :", 
-              {
-                  0: 'stopped',
-                  1: 'on'
-              }[(conf.byADCOptions >> 7) & 0x01])
-        print(f"  byGPIO      = {conf.byGPIO} ({hex(conf.byGPIO)})")
-        print(f"    [3:0] GPIO direction (0=output, 1=input):"
-              f"{conf.byGPIO & 0x0F :04b} (port 4~1)")
-        print(f"    [7:4] GPIO voltage level (0=low, 1=high):"
-              f"{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
-        print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
-        print(f"  byReserved  = {conf.byReserved:08b} (reserved)")
-        print(f"  wTrigVol    = {conf.wTrigVol} (trigger voltage in mV)")
-        print(f"  wPeriod     = {conf.wPeriod} (sampling period)")
-        print(f"  wPreNum     = {conf.wPreNum} (pre-sampling number after trigger)")
-        print(f"  wReserved   = {conf.wReserved} (reserved)")
-        print(f"  dwCycleCnt  = {conf.dwCycleCnt} (sampling cycles)")
-        print(f"  dwMaxCycles = {conf.dwMaxCycles} (max sampling cycles, 0=no limit)")
-        print(f"  dwReserved  = {conf.dwReserved} (reserved)")
-        t_intv = self.get_sampling_interval()
-        print(f"  Sampling frequency: {pretty_num_unit(1.0/t_intv)}Hz.")
-        print(f"  Duration: {t_intv*conf.dwMaxCycles:.6g} s.")
+        M3F20xm_ShowConfig(self.adc_config)
 
     def show_reg(self, simple = False):
-        # TODO: move this to independent function
-        if simple:
-            reg_list = list(self.get_register())
-            print('reg:')
-            for ii in range((len(reg_list)-1)//8 + 1):
-                for jj in range(min(8, len(reg_list)-ii*8)):
-                    print(f"0x{reg_list[ii*8+jj]:02X}", end=' ')
-                print('')
-            print('')
-            return
-        reg = lambda n: self.reg_list[n-1]
-        print("Register list:")
-        print(f"  RESET_DETECT : {reg(0x01)>>7 & 0x01}")
-        print(f"  DIGITAL_ERROR: {reg(0x01)>>6 & 0x01}")
-        print(f"  OPEN_DETECTED: {reg(0x01)>>5 & 0x01}")
-        print(f"  CONFIG:")
-        print(f"    STATUS_HEADER : {reg(0x02)>>6 & 0x01}")
-        print(f"    EXT_OS_CLOCK  : {reg(0x02)>>5 & 0x01}")
-        dout_fmt_st = {
-            0b00: '1 D_outx',
-            0b01: '2 D_outx',
-            0b10: '4 D_outx',
-            0b11: '8 D_outx'
-        }
-        print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03} ({dout_fmt_st[reg(0x02)>>3 & 0x03]}))")
-        op_mode_st = {
-            0b00: 'normal',
-            0b01: 'standby',
-            0b10: 'autostandby',
-            0b11: 'shutdown'
-        }
-        print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03} ({op_mode_st[reg(0x02)>>0 & 0x03]}))")
-        print(f"  Input range (4bits):")
-        rginfo = {
-            0b0000: "±2.5 V single-ended",
-            0b0001: "±5   V single-ended",
-            0b0010: "±6.25V single-ended",
-            0b0011: "±10  V single-ended",
-            0b0100: "±12.5V single-ended",
-            0b0101: "0~ 5  V single-ended",
-            0b0110: "0~10  V single-ended",
-            0b0111: "0~12.5V single-ended",
-            0b1000: "±5   V differential",
-            0b1001: "±10  V differential",
-            0b1010: "±12.5V differential",
-            0b1011: "±20  V differential",
-            0b1100: "(not defined)",
-            0b1101: "(not defined)",
-            0b1110: "(not defined)",
-            0b1111: "(not defined)",
-        }
-        print(f"    CH1: {reg(0x03)>>0 & 0x0F:04b} ({rginfo[reg(0x03)>>0 & 0x0F]}))")
-        print(f"    CH2: {reg(0x03)>>4 & 0x0F:04b} ({rginfo[reg(0x03)>>4 & 0x0F]}))")
-        print(f"    CH3: {reg(0x04)>>0 & 0x0F:04b} ({rginfo[reg(0x04)>>0 & 0x0F]}))")
-        print(f"    CH4: {reg(0x04)>>4 & 0x0F:04b} ({rginfo[reg(0x04)>>4 & 0x0F]}))")
-        print(f"    CH5: {reg(0x05)>>0 & 0x0F:04b} ({rginfo[reg(0x05)>>0 & 0x0F]}))")
-        print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
-        print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
-        print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
-        print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1)")
-        print("  Oversampling:")
-        print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
-        print(f"    OS_RATIO: {reg(0x08)>>0 & 0x0F:04b} (x{1<<(reg(0x08)>>0 & 0x0F)})")
-        print("  Gain Register to Remove Gain Error Caused by External R_FILTER (0~63):")
-        print(f"    CH1: {reg(0x09) & 0x3F}")
-        print(f"    CH2: {reg(0x0A) & 0x3F}")
-        print(f"    CH3: {reg(0x0B) & 0x3F}")
-        print(f"    CH4: {reg(0x0C) & 0x3F}")
-        print(f"    CH5: {reg(0x0D) & 0x3F}")
-        print(f"    CH6: {reg(0x0E) & 0x3F}")
-        print(f"    CH7: {reg(0x0F) & 0x3F}")
-        print(f"    CH8: {reg(0x10) & 0x3F}")
-        print(f"  Offset Register to Remove External System Offset Errors (0~255):")
-        print(f"    CH1: {reg(0x11)}")
-        print(f"    CH2: {reg(0x12)}")
-        print(f"    CH3: {reg(0x13)}")
-        print(f"    CH4: {reg(0x14)}")
-        print(f"    CH5: {reg(0x15)}")
-        print(f"    CH6: {reg(0x16)}")
-        print(f"    CH7: {reg(0x17)}")
-        print(f"    CH8: {reg(0x18)}")
-        print(f"  Phase delay from 0 µs to 255 µs in steps of 1 µs. (0~255):")
-        print(f"    CH1: {reg(0x19)}")
-        print(f"    CH2: {reg(0x1A)}")
-        print(f"    CH3: {reg(0x1B)}")
-        print(f"    CH4: {reg(0x1C)}")
-        print(f"    CH5: {reg(0x1D)}")
-        print(f"    CH6: {reg(0x1E)}")
-        print(f"    CH7: {reg(0x1F)}")
-        print(f"    CH8: {reg(0x20)}")
-        print("  Error flags:")
-        print(f"    INTERFACE_CHECK_EN    : {reg(0x21)>>7 & 0x01}")
-        print(f"    CLK_FS_OS_COUNTER_EN  : {reg(0x21)>>6 & 0x01}")
-        print(f"    BUSY_STUCK_HIGH_ERR_EN: {reg(0x21)>>5 & 0x01}")
-        print(f"    SPI_READ_ERR_EN       : {reg(0x21)>>4 & 0x01}")
-        print(f"    SPI_WRITE_ERR_EN      : {reg(0x21)>>3 & 0x01}")
-        print(f"    INT_CRC_ERR_EN        : {reg(0x21)>>2 & 0x01}")
-        print(f"    MM_CRC_ERR_EN         : {reg(0x21)>>1 & 0x01}")
-        print(f"    ROM_CRC_ERR_EN        : {reg(0x21)>>0 & 0x01}")
-        print(f"    BUSY_STUCK_HIGH_ERR   : {reg(0x22)>>5 & 0x01}")
-        print(f"    SPI_READ_ERR          : {reg(0x22)>>4 & 0x01}")
-        print(f"    SPI_WRITE_ERR         : {reg(0x22)>>3 & 0x01}")
-        print(f"    INT_CRC_ERR           : {reg(0x22)>>2 & 0x01}")
-        print(f"    MM_CRC_ERR            : {reg(0x22)>>1 & 0x01}")
-        print(f"    ROM_CRC_ERR           : {reg(0x22)>>0 & 0x01}")
-        print(f"  Channel open detect enable: {reg(0x23):08b} (CH 8~1)")
-        print(f"  Channel open detected     : {reg(0x24):08b} (CH 8~1)")
-        print("  DIAGNOSTIC_MUX")
-        print(f"    CH1: {reg(0x28)>>0 & 0x07}")
-        print(f"    CH2: {reg(0x28)>>3 & 0x07}")
-        print(f"    CH3: {reg(0x29)>>0 & 0x07}")
-        print(f"    CH4: {reg(0x29)>>3 & 0x07}")
-        print(f"    CH5: {reg(0x2A)>>0 & 0x07}")
-        print(f"    CH6: {reg(0x2A)>>3 & 0x07}")
-        print(f"    CH7: {reg(0x2B)>>0 & 0x07}")
-        print(f"    CH8: {reg(0x2B)>>3 & 0x07}")
-        print(f"  OPEN_DETECT_QUEUE: {reg(0x2C)}")
-        print(f"  FS_CLK_COUNTER   : {reg(0x2D)}")
-        print(f"  OS_CLK_COUNTER   : {reg(0x2E)}")
-        print(f"  ID               : {reg(0x2F) >> 4:X}")
-        print(f"  SILICON_REVISION : {reg(0x2F) & 0x0F:X}")
+        reg_list = list(self.get_register())
+        AD7606C_ShowReg(reg_list, simple)
 
     def one_sample(self):
         # read a ADC sample data
@@ -713,19 +725,19 @@ class M3F20xmADC:
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
         dwBuffSize = 2 * self.n_channel * n_max_frames
-        lpBuffer = (c_short * (dwBuffSize // 2))()   # TODO: set type by get_register
+        lpBuffer = (c_short * (dwBuffSize // 2))()   # TODO: set type by get_register, pre allocate memory, set n_max_frames at start
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
-        dbg_print(5, 'M3F20xm_ReadFIFO return', result)
-        dbg_print(5, f"pdwRealSize: {pdwRealSize.value}")
+        #dbg_print(5, 'M3F20xm_ReadFIFO return', result)
+        #dbg_print(5, f"pdwRealSize: {pdwRealSize.value}")
         arr = array.array('h', lpBuffer[:(pdwRealSize.value // 2)])
         return arr
 
     def get_fifo_frames_left(self):
         pwdBuffSize = c_ulong(0)
         result = M3F20xm_GetFIFOLeft(self.device_number, byref(pwdBuffSize))
-        dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
-        dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
+        #dbg_print(5, 'M3F20xm_GetFIFOLeft return', result)
+        #dbg_print(4, f"Data still in buffer: {pwdBuffSize.value}")
         return pwdBuffSize.value // 2 // self.n_channel
 
     def close(self):
