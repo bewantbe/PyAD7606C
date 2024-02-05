@@ -166,6 +166,7 @@ M3F20xm_ADCStop.restype = c_bool
 
 # Initialize and clean internal FIFO buffer
 # prototype: bool M3F20xm_InitFIFO(BYTE byIndex)
+# It is said that the internal FIFO buffer has 50MB, better read every 100ms
 # Note: return ture if successful, false if failed
 M3F20xm_InitFIFO = adc_dll.M3F20xm_InitFIFO
 M3F20xm_InitFIFO.argtypes = [c_ubyte]
@@ -177,6 +178,7 @@ M3F20xm_InitFIFO.restype = c_bool
 #       dwBuffSize: requested data length, type depends on range selection
 #       pdwRealSize: actual data length 
 # Note: return ture if successful, false if failed
+# Note: minimum read is 0 or 192 frames at 500kHz.
 M3F20xm_ReadFIFO = adc_dll.M3F20xm_ReadFIFO
 M3F20xm_ReadFIFO.argtypes = [c_ubyte, POINTER(c_ushort), c_ulong, POINTER(c_ulong)]
 M3F20xm_ReadFIFO.restype = c_bool
@@ -527,7 +529,10 @@ class M3F20xmADC:
                 try:
                     self.init(reset)
                 except ConnectionError as e:
-                    time.sleep(1)
+                    time.sleep(0.5)
+                    #ret = M3F20xm_ADCReset(self.device_number)
+                    #dbg_print(3, 'Reset the device by command. ret =', ret)
+                    time.sleep(0.5)
                     self.close()
                     time.sleep(1)
                     self.init(reset)  # one more try
@@ -737,7 +742,7 @@ class M3F20xmADC:
     def set_sampling_rate(self, sr, t_total = None):
         # sr: sampling rate in Hz
         # t_total: total sampling time in second, None means no limit
-        self.set_sampling_interval(1.0 / sr)
+        self.set_sampling_interval(1.0 / sr)       # TODO: merge extra self.config
         t_intv = self.get_sampling_interval()
         if t_total is not None:
             n_cycle = int(1.0 / t_intv * t_total + 0.5)
