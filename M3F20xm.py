@@ -108,12 +108,16 @@ M3F20xm_CloseDevice = adc_dll.M3F20xm_CloseDevice
 M3F20xm_CloseDevice.argtypes = [c_ubyte]
 M3F20xm_CloseDevice.restype = c_bool
 
+# reset
+# prototype: bool M3F20xm_ADCReset(BYTE byIndex)
+# Note: return ture if successful, false if failed
+M3F20xm_ADCReset = adc_dll.M3F20xm_ADCReset
+M3F20xm_ADCReset.argtypes = [c_ubyte]
+M3F20xm_ADCReset.restype = c_bool
+
 # prototype: bool M3F20xm_Verify(BYTE byIndex, BYTE* pResult)
 # Note: return ture if successful, false if failed
 M3F20xm_Verify = adc_dll.M3F20xm_Verify
-# old
-#M3F20xm_Verify.argtypes = [c_ubyte, POINTER(c_ubyte)]
-#M3F20xm_Verify.restype = c_bool
 # new 2024
 M3F20xm_Verify.argtypes = [c_ubyte]
 M3F20xm_Verify.restype = c_bool
@@ -244,10 +248,40 @@ def pretty_num_unit(v, n_prec = 4):
     st = f'%.{n_prec}g%s'%(v, scale_st[scale])
     return st
 
-def M3F20xm_ShowConfig(conf):
+def M3F20xm_ShowConfig(conf, simple = False):
     # show config in an user friendly way
+    if simple:
+        print("ADC_CONFIG:")
+        l = [len(field[0]) for field in conf._fields_]
+        m = max(l)
+        for k, field in enumerate(conf._fields_):
+            v = getattr(conf, field[0])
+            print(f"    {field[0]}{' '*(m-l[k])} : {v} = (0x{v:02X})")
+        return
+
     print("ADC_CONFIG:")
     print(f"  byADCOptions = {conf.byADCOptions} ({hex(conf.byADCOptions)})")
+    print("    [7]   Trigger status    :", 
+            {
+                0: 'stopped',
+                1: 'on'
+            }[(conf.byADCOptions >> 7) & 0x01])
+    print("    [5]   Sample period unit:",
+            {
+                0: '1 us',
+                1: '1 ms'
+            }[(conf.byADCOptions >> 5) & 0x01])
+    print("    [4]   Trigger compare   :",
+            {
+                0: 'greater or equal',
+                1: 'less or equal'
+            }[(conf.byADCOptions >> 4) & 0x01])
+    print("    [3:2] Trigger edge      :", 
+            {
+                0: 'falling',
+                1: 'rising',
+                2: 'both'
+            }[(conf.byADCOptions >> 2) & 0x03])
     print("    [1:0] Trigger mode      :",
         {
             0: 'by GPIO, one sample per event',
@@ -255,37 +289,16 @@ def M3F20xm_ShowConfig(conf):
             2: 'by GPIO then period',
             3: 'by voltage compare then period'
         }[conf.byADCOptions & 0x03])
-    print("    [3:2] Trigger edge      :", 
-            {
-                0: 'falling',
-                1: 'rising',
-                2: 'both'
-            }[(conf.byADCOptions >> 2) & 0x03])
-    print("    [4]   Trigger compare   :",
-            {
-                0: 'greater or equal',
-                1: 'less or equal'
-            }[(conf.byADCOptions >> 4) & 0x01])
-    print("    [5]   Sample period unit:",
-            {
-                0: '1 us',
-                1: '1 ms'
-            }[(conf.byADCOptions >> 5) & 0x01])
-    print("    [7]   Trigger status    :", 
-            {
-                0: 'stopped',
-                1: 'on'
-            }[(conf.byADCOptions >> 7) & 0x01])
     t_unit = 1e-3 if (conf.byADCOptions & 0x20) else 1e-6
     t_cnt = conf.wPeriod
     t_intv = t_unit * t_cnt
     print(f"  byGPIO      = {conf.byGPIO} ({hex(conf.byGPIO)})")
-    print(f"    [3:0] GPIO direction (0=output, 1=input):"
-            f"{conf.byGPIO & 0x0F :04b} (port 4~1)")
-    print(f"    [7:4] GPIO voltage level (0=low, 1=high):"
-            f"{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
-    print(f"  byActived   = {conf.byActived:08b} (channel for trigger)")
-    print(f"  byReserved  = {conf.byReserved:08b} (reserved)")
+    print(f"    [7:4] GPIO voltage level (0=low, 1=high): "
+            f"0b{(conf.byGPIO >> 4) & 0x0F :04b} (port 4~1)")
+    print(f"    [3:0] GPIO direction (0=output, 1=input): "
+            f"0b{conf.byGPIO & 0x0F :04b} (port 4~1)")
+    print(f"  byActived   = 0b{conf.byActived:08b} (channel for trigger)")
+    print(f"  byReserved  = 0b{conf.byReserved:08b} (reserved)")
     print(f"  wTrigVol    = {conf.wTrigVol} (trigger voltage in mV)")
     print(f"  wPeriod     = {conf.wPeriod} (sampling period)")
     print(f"  wPreNum     = {conf.wPreNum} (pre-sampling number after trigger)")
@@ -321,14 +334,14 @@ def AD7606C_ShowReg(reg_list, simple = False):
         0b10: '4 D_outx',
         0b11: '8 D_outx'
     }
-    print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03} ({dout_fmt_st[reg(0x02)>>3 & 0x03]}))")
+    print(f"    DOUT_FORMAT   : {reg(0x02)>>3 & 0x03} ({dout_fmt_st[reg(0x02)>>3 & 0x03]})")
     op_mode_st = {
         0b00: 'normal',
         0b01: 'standby',
         0b10: 'autostandby',
         0b11: 'shutdown'
     }
-    print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03} ({op_mode_st[reg(0x02)>>0 & 0x03]}))")
+    print(f"    OPERATION_MODE: {reg(0x02)>>0 & 0x03} ({op_mode_st[reg(0x02)>>0 & 0x03]})")
     print(f"  Input range (4bits):")
     rginfo = {
         0b0000: "±2.5 V single-ended",
@@ -348,19 +361,19 @@ def AD7606C_ShowReg(reg_list, simple = False):
         0b1110: "(not defined)",
         0b1111: "(not defined)",
     }
-    print(f"    CH1: {reg(0x03)>>0 & 0x0F:04b} ({rginfo[reg(0x03)>>0 & 0x0F]}))")
-    print(f"    CH2: {reg(0x03)>>4 & 0x0F:04b} ({rginfo[reg(0x03)>>4 & 0x0F]}))")
-    print(f"    CH3: {reg(0x04)>>0 & 0x0F:04b} ({rginfo[reg(0x04)>>0 & 0x0F]}))")
-    print(f"    CH4: {reg(0x04)>>4 & 0x0F:04b} ({rginfo[reg(0x04)>>4 & 0x0F]}))")
-    print(f"    CH5: {reg(0x05)>>0 & 0x0F:04b} ({rginfo[reg(0x05)>>0 & 0x0F]}))")
-    print(f"    CH6: {reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
-    print(f"    CH7: {reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
-    print(f"    CH8: {reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
+    print(f"    CH1: 0b{reg(0x03)>>0 & 0x0F:04b} ({rginfo[reg(0x03)>>0 & 0x0F]}))")
+    print(f"    CH2: 0b{reg(0x03)>>4 & 0x0F:04b} ({rginfo[reg(0x03)>>4 & 0x0F]}))")
+    print(f"    CH3: 0b{reg(0x04)>>0 & 0x0F:04b} ({rginfo[reg(0x04)>>0 & 0x0F]}))")
+    print(f"    CH4: 0b{reg(0x04)>>4 & 0x0F:04b} ({rginfo[reg(0x04)>>4 & 0x0F]}))")
+    print(f"    CH5: 0b{reg(0x05)>>0 & 0x0F:04b} ({rginfo[reg(0x05)>>0 & 0x0F]}))")
+    print(f"    CH6: 0b{reg(0x05)>>4 & 0x0F:04b} ({rginfo[reg(0x05)>>4 & 0x0F]}))")
+    print(f"    CH7: 0b{reg(0x06)>>0 & 0x0F:04b} ({rginfo[reg(0x06)>>0 & 0x0F]}))")
+    print(f"    CH8: 0b{reg(0x06)>>4 & 0x0F:04b} ({rginfo[reg(0x06)>>4 & 0x0F]}))")
     # AD7606C-16 Manual, p-p 34, Table 18, Table 19
-    print(f"  BANDWIDTH: {reg(0x07):08b} (CH 8~1) (25kHz or 220kHz)")
+    print(f"  BANDWIDTH: 0b{reg(0x07):08b} (CH 8~1) (0: 25kHz or 1: 220kHz)")
     print("  Oversampling:")
     print(f"    OS_PAD  : {reg(0x08)>>4 & 0x0F}")
-    print(f"    OS_RATIO: {reg(0x08)>>0 & 0x0F:04b} (x{1<<(reg(0x08)>>0 & 0x0F)})")
+    print(f"    OS_RATIO: 0b{reg(0x08)>>0 & 0x0F:04b} (x{1<<(reg(0x08)>>0 & 0x0F)})")
     print("  Gain Register to Remove Gain Error Caused by External R_FILTER (0~63):")
     print(f"    CH1: {reg(0x09) & 0x3F}")
     print(f"    CH2: {reg(0x0A) & 0x3F}")
@@ -403,8 +416,8 @@ def AD7606C_ShowReg(reg_list, simple = False):
     print(f"    INT_CRC_ERR           : {reg(0x22)>>2 & 0x01}")
     print(f"    MM_CRC_ERR            : {reg(0x22)>>1 & 0x01}")
     print(f"    ROM_CRC_ERR           : {reg(0x22)>>0 & 0x01}")
-    print(f"  Channel open detect enable: {reg(0x23):08b} (CH 8~1)")
-    print(f"  Channel open detected     : {reg(0x24):08b} (CH 8~1)")
+    print(f"  Channel open detect enable: 0b{reg(0x23):08b} (CH 8~1)")
+    print(f"  Channel open detected     : 0b{reg(0x24):08b} (CH 8~1)")
     print("  DIAGNOSTIC_MUX")
     print(f"    CH1: {reg(0x28)>>0 & 0x07}")
     print(f"    CH2: {reg(0x28)>>3 & 0x07}")
@@ -417,8 +430,8 @@ def AD7606C_ShowReg(reg_list, simple = False):
     print(f"  OPEN_DETECT_QUEUE: {reg(0x2C)}")
     print(f"  FS_CLK_COUNTER   : {reg(0x2D)}")
     print(f"  OS_CLK_COUNTER   : {reg(0x2E)}")
-    print(f"  ID               : {reg(0x2F) >> 4:X}")
-    print(f"  SILICON_REVISION : {reg(0x2F) & 0x0F:X}")
+    print(f"  ID               : 0x{reg(0x2F) >> 4:X}")
+    print(f"  SILICON_REVISION : 0x{reg(0x2F) & 0x0F:X}")
     print('')
 
 def AD7606C_VoltRangeGetReg(volt_range, ends='single'):
@@ -446,7 +459,7 @@ def AD7606C_VoltRangeGetReg(volt_range, ends='single'):
         reg_offset = 8
     volt_abs_max = max(abs(volt_range[0]), abs(volt_range[1]))
     for i in range(len(vtb)):
-        print(f"i = {i}, v = {vtb[i]} vs {volt_abs_max}")
+        #print(f"i = {i}, v = {vtb[i]} vs {volt_abs_max}")
         if volt_abs_max <= vtb[i]:
             break
     if (i >= len(vtb)) or (volt_abs_max > vtb[i]):
@@ -507,16 +520,20 @@ class M3F20xmADC:
         self.ready = False
         self.need_notify = False
         self.b_adc_started = False
-        if not reset:
-            self.init()
-        else:
-            try:
+        try:
+            if not reset:
                 self.init()
-            except ConnectionError as e:
-                time.sleep(1)
-                self.close()
-                time.sleep(1)
-                self.init()  # one more try
+            else:
+                try:
+                    self.init(reset)
+                except ConnectionError as e:
+                    time.sleep(1)
+                    self.close()
+                    time.sleep(1)
+                    self.init(reset)  # one more try
+        except Exception as e:
+            self.close()   # clean up before give up
+            raise e
 
     def usb_ready_callback(iDevIndex, iDevStatus):
         """callback function for USB plug-in/out notification."""
@@ -527,7 +544,7 @@ class M3F20xmADC:
             print(3, "Device plugged in.")
         return True
     
-    def init(self):
+    def init(self, reset = False):
         if self.need_notify:
             # Convert the Python callback function to a C callback function
             USB_READY_CALLBACK = M3F20xm_USB_READY_CALLBACK(self.usb_ready_callback)
@@ -576,7 +593,7 @@ class M3F20xmADC:
                 dbg_print(1, f"Error in querying version. result = {result}.")
                 self.ready = False
                 self.at_error(ConnectionError(f"Error in querying version. result = {result}."))
-            time.sleep(0.1)   # not sure
+            time.sleep(0.5)   # not sure
 
         # call M3F20xm_GetSerialNo to get serial number
         result, self.serial_number = self.status()
@@ -592,17 +609,18 @@ class M3F20xmADC:
         adc_config = ADC_CONFIG()
         result = M3F20xm_ADCGetConfig(device_number, byref(adc_config))
         dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
-        dbg_print(5, "ADC_CONFIG:")
-        for field in adc_config._fields_:
-            v = getattr(adc_config, field[0])
-            dbg_print(5, f"    {field[0]}\t: {v} = ({hex(v)})")
         self.adc_config = adc_config
+        M3F20xm_ShowConfig(adc_config, True)
 
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
         M3F20xm_ReadAllReg(device_number, reg_list)
         self.reg_list = reg_list
 
-        self.init_ch_range()
+        if reset:
+            self.config('reset')
+            self.set_register('reset')
+        else:
+            self.init_ch_range()
 
     def reset(self):
         # reset the device as hard as possible
@@ -638,12 +656,15 @@ class M3F20xmADC:
             kwargs = {
                 'byADCOptions': 0x11,
                 'byGPIO'      : 0x0F,
-                'byActived'   : 0x00,
-                'wTrigVol'    : 0x00,
+                'byActived'   : 0,
+                'byReserved'  : 0,
+                'wTrigVol'    : 0,
                 'wPeriod'     : 10,
                 'wPreNum'     : 0,
+                'wReserved'   : 0,
                 'dwCycleCnt'  : 0,
                 'dwMaxCycles' : 6000000,
+                'dwReserved'  : 0
             }
         if not kwargs:
             return
@@ -654,6 +675,9 @@ class M3F20xmADC:
                 raise KeyError(f'Invalid config key "{k}".')
             setattr(adc_config, k, v)
         result = M3F20xm_ADCSetConfig(self.device_number, byref(adc_config))
+        dbg_print(5, f"M3F20xm_ADCSetConfig return {result}")
+        M3F20xm_ShowConfig(adc_config, True)
+        time.sleep(0.5)  # should I wait?
 
     def get_config(self, update = True):
         adc_config = self.adc_config
@@ -686,7 +710,11 @@ class M3F20xmADC:
         for i, v in enumerate(reg_list):
             #dbg_print(4, 'i, v =', i, v)
             self.reg_list[i] = v
-        M3F20xm_WriteAllReg(self.device_number, self.reg_list)
+        ret = M3F20xm_WriteAllReg(self.device_number, self.reg_list)
+        dbg_print(5, 'M3F20xm_WriteAllReg return', ret)
+        self.init_ch_range()
+        AD7606C_ShowReg(reg_list, True)
+        time.sleep(0.5)  # should I wait?
 
     def get_sampling_interval(self):
         t_unit = 1e-3 if (self.adc_config.byADCOptions & 0x20) else 1e-6
@@ -732,7 +760,6 @@ class M3F20xmADC:
         reg[0x05-1] = reg_range | (reg_range << 4)
         reg[0x06-1] = reg_range | (reg_range << 4)
         self.set_register(reg)
-        self.init_ch_range()
         # TODO: add calibration input port.
 
     def show_config(self):
@@ -764,11 +791,19 @@ class M3F20xmADC:
         result = M3F20xm_ADCStart(self.device_number)
         dbg_print(5, 'M3F20xm_ADCStart return', result)
 
-    def stop(self):
+    def stop(self, idev = None):
         dbg_print(5, 'trying stop ADC.')
-        result = M3F20xm_ADCStop(self.device_number)
+        if idev is not None:
+            id_dev = idev
+        elif self.device_number is not None:
+            id_dev = self.device_number
+        else:
+            dbg_print(2, 'No ADC device to stop.')
+            return
+        result = M3F20xm_ADCStop(id_dev)
         dbg_print(5, 'M3F20xm_ADCStop return', result)
         self.b_adc_started = False
+        time.sleep(0.1)  # should I wait?
 
     def read(self, n_max_frames = None):
         if n_max_frames is not None:
