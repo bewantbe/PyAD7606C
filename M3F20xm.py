@@ -527,15 +527,12 @@ class M3F20xmADC:
                 self.init()
             else:
                 try:
-                    self.init(reset)
+                    self.init('reset')
                 except ConnectionError as e:
-                    time.sleep(0.5)
-                    #ret = M3F20xm_ADCReset(self.device_number)
-                    #dbg_print(3, 'Reset the device by command. ret =', ret)
-                    time.sleep(0.5)
+                    time.sleep(0.1)
                     self.close()
-                    time.sleep(1)
-                    self.init(reset)  # one more try
+                    self.reset_state()
+                    self.init('reset')
         except Exception as e:
             self.close()   # clean up before give up
             raise e
@@ -587,13 +584,17 @@ class M3F20xmADC:
 
         # loop to query version information
         for i_type in [0, 1, 2]:
+            ver_buffer.value = b''
             result = M3F20xm_GetVersion(device_number, i_type, ver_buffer)
             # Check the result
             if result:
                 q = M3F20xm_GetVersion_query_dict[i_type]
                 v = ver_buffer.value.decode('utf-8')
-                dbg_print(5, f"Query successful. {q}: {v}")
+                dbg_print(5, f'Query successful. {q}: "{v}" (len={len(ver_buffer.value)})')
                 self.version_string[q] = v
+                if len(ver_buffer.value) <= 1:
+                    dbg_print(2, f"  But zero length string returned.")
+                    self.at_error(ConnectionError(f"zero length string returned for {q}."))
             else:
                 dbg_print(1, f"Error in querying version. result = {result}.")
                 self.ready = False
@@ -627,16 +628,22 @@ class M3F20xmADC:
         else:
             self.init_ch_range()
 
-    def reset(self):
+    def reset_state(self):
         # reset the device as hard as possible
-        logging.info("Resetting the device.")
-        self.stop()
+        dbg_print(2, "Resetting the device.")
         time.sleep(0.1)
-        self.close()
+        device_number = M3F20xm_OpenDevice()
+        dbg_print(5, '  M3F20xm_OpenDevice() =', device_number)
         time.sleep(0.1)
-        self.init()
-        self.config('reset')
-        self.set_register('reset')
+        ret = M3F20xm_Verify(device_number)
+        dbg_print(5, '  M3F20xm_Verify() =', ret)
+        time.sleep(0.1)
+        ret = M3F20xm_ADCReset(device_number)
+        dbg_print(5, '  M3F20xm_ADCReset() =', ret)
+        time.sleep(1.0)
+        ret = M3F20xm_CloseDevice(device_number)
+        time.sleep(0.1)
+        dbg_print(5, '  M3F20xm_CloseDevice() =', ret)
 
     def status(self):
         dbg_print(5, 'serial and status query.')
