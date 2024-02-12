@@ -1,6 +1,6 @@
 # Python wrapper for USB2DaqsB.dll
 
-import logging
+#import logging
 import math
 import time
 import array
@@ -522,6 +522,7 @@ class M3F20xmADC:
         self.ready = False
         self.need_notify = False
         self.b_adc_started = False
+        self._retry_count_ = 0
         try:
             if not reset:
                 self.init()
@@ -558,7 +559,7 @@ class M3F20xmADC:
 
         # wait a while for the device to be ready (dll initialization)
         # 0.04 second is at the boundary of success and failure, so we choose 0.1 second
-        time.sleep(0.1)
+        time.sleep(0.5)
 
         device_number = M3F20xm_OpenDevice()
         if device_number == 0xFF:
@@ -570,14 +571,14 @@ class M3F20xmADC:
             self.ready = True
             self.device_number = device_number
 
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
         # call M3F20xm_Verify
         result = M3F20xm_Verify(device_number)
         dbg_print(4, f"M3F20xm_Verify return {result}.")
         self.verify_result = result
 
-        time.sleep(0.1)  # not sure
+        #time.sleep(0.1)  # not sure
 
         ver_buffer_size = 256  # >= 50
         ver_buffer = create_string_buffer(ver_buffer_size)
@@ -599,7 +600,7 @@ class M3F20xmADC:
                 dbg_print(1, f"Error in querying version. result = {result}.")
                 self.ready = False
                 self.at_error(ConnectionError(f"Error in querying version. result = {result}."))
-            time.sleep(0.5)   # not sure
+            #time.sleep(0.5)   # not sure
 
         # call M3F20xm_GetSerialNo to get serial number
         result, self.serial_number = self.status()
@@ -614,12 +615,14 @@ class M3F20xmADC:
         # call M3F20xm_ADCGetConfig
         adc_config = ADC_CONFIG()
         result = M3F20xm_ADCGetConfig(device_number, byref(adc_config))
+        #time.sleep(0.5)
         dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
         self.adc_config = adc_config
         M3F20xm_ShowConfig(adc_config, True)
 
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
         M3F20xm_ReadAllReg(device_number, reg_list)
+        #time.sleep(0.5)
         self.reg_list = reg_list
 
         if reset:
@@ -634,22 +637,36 @@ class M3F20xmADC:
         time.sleep(0.1)
         device_number = M3F20xm_OpenDevice()
         dbg_print(5, '  M3F20xm_OpenDevice() =', device_number)
+        if device_number == 0xFF:
+            dbg_print(1, "Failed to open device, trying again.")
+            ret = M3F20xm_CloseDevice(0)
+            dbg_print(1, "  Close. ret =", ret)
+            time.sleep(0.1)
+            ret = M3F20xm_CloseDevice(0)
+            dbg_print(1, "  Close. ret =", ret)
+            time.sleep(0.1)
+            device_number = M3F20xm_OpenDevice()
+            if device_number == 0xFF:
+                dbg_print(1, "Failed to open device (ret = 0xFF). No progress, give up.")
+                raise ConnectionError("Failed to open device. (return 255)")
         time.sleep(0.1)
         ret = M3F20xm_Verify(device_number)
         dbg_print(5, '  M3F20xm_Verify() =', ret)
         time.sleep(0.1)
         ret = M3F20xm_ADCReset(device_number)
         dbg_print(5, '  M3F20xm_ADCReset() =', ret)
-        time.sleep(1.0)
-        ret = M3F20xm_CloseDevice(device_number)
         time.sleep(0.1)
+        ret = M3F20xm_CloseDevice(device_number)
+        time.sleep(0.5)
         dbg_print(5, '  M3F20xm_CloseDevice() =', ret)
+        self._retry_count_ += 1
 
     def status(self):
         dbg_print(5, 'serial and status query.')
         # get serial number
         serial_buffer = create_string_buffer(self.SERIAL_NUMBER_LENGTH)
         result = M3F20xm_GetSerialNo(self.device_number, serial_buffer)
+        #time.sleep(0.1)
         serial_number = serial_buffer.value.decode('utf-8')
         if result == 0:
             print("No device found.")
@@ -689,13 +706,14 @@ class M3F20xmADC:
         result = M3F20xm_ADCSetConfig(self.device_number, byref(adc_config))
         dbg_print(5, f"M3F20xm_ADCSetConfig return {result}")
         M3F20xm_ShowConfig(adc_config, True)
-        time.sleep(0.5)  # should I wait?
+        time.sleep(0.1)  # should I wait?
 
     def get_config(self, update = True):
         adc_config = self.adc_config
         if update:
             result = M3F20xm_ADCGetConfig(self.device_number, byref(adc_config))
         dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
+        #time.sleep(0.1)
         return adc_config
 
     def get_register(self, update = True):
@@ -703,6 +721,7 @@ class M3F20xmADC:
         if update:
             ret = M3F20xm_ReadAllReg(self.device_number, reg_list)
         dbg_print(5, 'M3F20xm_ReadAllReg return', ret)
+        #time.sleep(0.5)
         return reg_list
 
     def set_register(self, reg_list):
@@ -726,7 +745,7 @@ class M3F20xmADC:
         dbg_print(5, 'M3F20xm_WriteAllReg return', ret)
         self.init_ch_range()
         AD7606C_ShowReg(reg_list, True)
-        time.sleep(0.5)  # should I wait?
+        time.sleep(0.1)  # should I wait?
 
     def get_sampling_interval(self):
         t_unit = 1e-3 if (self.adc_config.byADCOptions & 0x20) else 1e-6
@@ -793,6 +812,7 @@ class M3F20xmADC:
 
     def start(self, n_max_frames):
         result = M3F20xm_InitFIFO(self.device_number)
+        time.sleep(0.1)
         dbg_print(5, 'M3F20xm_InitFIFO return', result)
         self.dwBuffSize = 2 * self.n_channel * n_max_frames
         #self.lpBuffer   = (self.ty1 * (self.dwBuffSize // 2))()
@@ -801,6 +821,7 @@ class M3F20xmADC:
                           .from_buffer(self.lpBuffer_bytes)
         self.b_adc_started = True
         result = M3F20xm_ADCStart(self.device_number)
+        #time.sleep(0.1)
         dbg_print(5, 'M3F20xm_ADCStart return', result)
 
     def stop(self, idev = None):
@@ -863,6 +884,7 @@ class M3F20xmADC:
         result = M3F20xm_CloseDevice(self.device_number)
         dbg_print(5, 'M3F20xm_CloseDevice return', result)
         self.device_number = None
+        time.sleep(0.1)
 
     def at_error(self, exception):
         self.close()
