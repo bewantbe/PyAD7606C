@@ -814,7 +814,7 @@ class M3F20xmADC:
         result = M3F20xm_InitFIFO(self.device_number)
         time.sleep(0.1)
         dbg_print(5, 'M3F20xm_InitFIFO return', result)
-        self.dwBuffSize = 2 * self.n_channel * n_max_frames
+        self.dwBuffSize = 2 * self.n_channel * int(n_max_frames)
         #self.lpBuffer   = (self.ty1 * (self.dwBuffSize // 2))()
         self.lpBuffer_bytes = bytearray(self.dwBuffSize)
         self.lpBuffer   = (c_ushort * (self.dwBuffSize // 2)) \
@@ -860,7 +860,7 @@ class M3F20xmADC:
         # Note: lpBuffer: buffer for data
         #       dwBuffSize: requested data length
         #       pdwRealSize: actual data length 
-        dwBuffSize = 2 * self.n_channel * n_max_frames
+        dwBuffSize = 2 * self.n_channel * int(n_max_frames)
         lpBuffer = (c_short * (dwBuffSize // 2))()   # TODO: set type by get_register, pre allocate memory, set n_max_frames at start
         pdwRealSize = c_ulong(0)
         result = M3F20xm_ReadFIFO(self.device_number, lpBuffer, dwBuffSize, byref(pdwRealSize))
