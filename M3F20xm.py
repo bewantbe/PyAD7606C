@@ -211,7 +211,7 @@ M3F20xm_WriteAllReg.restype = c_bool
 #########################################################################
 # pythonic interface
 
-debug_level = 5
+debug_level = 3
 
 def dbg_print(level, *p, **keys):
     """
@@ -542,9 +542,9 @@ class M3F20xmADC:
         """callback function for USB plug-in/out notification."""
         dbg_print(3, f"iDevIndex: {iDevIndex}, iDevStatus: {iDevStatus}")
         if iDevStatus == 0x00:
-            print(3, "Device unplugged.")
+            dbg_print(3, "Device unplugged.")
         elif iDevStatus == 0x80:
-            print(3, "Device plugged in.")
+            dbg_print(3, "Device plugged in.")
         return True
     
     def init(self, reset = False):
@@ -618,7 +618,8 @@ class M3F20xmADC:
         #time.sleep(0.5)
         dbg_print(5, f"M3F20xm_ADCGetConfig return {result}.")
         self.adc_config = adc_config
-        M3F20xm_ShowConfig(adc_config, True)
+        if debug_level >= 4:
+            M3F20xm_ShowConfig(adc_config, True)
 
         reg_list = (c_ubyte * self.REG_LIST_LENGTH)()
         M3F20xm_ReadAllReg(device_number, reg_list)
@@ -668,15 +669,17 @@ class M3F20xmADC:
         result = M3F20xm_GetSerialNo(self.device_number, serial_buffer)
         #time.sleep(0.1)
         serial_number = serial_buffer.value.decode('utf-8')
+        dbg_print(2, 'Device status: ', end='')
         if result == 0:
-            print("No device found.")
+            dbg_print(2, "No device found.")
         elif result == 1:
-            print("Device not in use.")
+            dbg_print(2, "Device not in use.")
         elif result == 2:
-            print(f"Device in use. ")
+            dbg_print(2, f"Device in use. ")
         else:
+            dbg_print(2, f"")
             print(f"Error in querying serial number. result = {result}")
-        print(f'Serial Number: {serial_number}')
+        dbg_print(3, f'Serial Number: {serial_number}')
         return result, serial_number
 
     def config(self, *set_st, **kwargs):
@@ -705,7 +708,8 @@ class M3F20xmADC:
             setattr(adc_config, k, v)
         result = M3F20xm_ADCSetConfig(self.device_number, byref(adc_config))
         dbg_print(5, f"M3F20xm_ADCSetConfig return {result}")
-        M3F20xm_ShowConfig(adc_config, True)
+        if debug_level >= 4:
+            M3F20xm_ShowConfig(adc_config, True)
         time.sleep(0.1)  # should I wait?
 
     def get_config(self, update = True):
@@ -744,7 +748,8 @@ class M3F20xmADC:
         ret = M3F20xm_WriteAllReg(self.device_number, self.reg_list)
         dbg_print(5, 'M3F20xm_WriteAllReg return', ret)
         self.init_ch_range()
-        AD7606C_ShowReg(reg_list, True)
+        if debug_level >= 4:
+            AD7606C_ShowReg(reg_list, True)
         time.sleep(0.1)  # should I wait?
 
     def get_sampling_interval(self):
@@ -799,6 +804,17 @@ class M3F20xmADC:
     def show_reg(self, simple = False):
         reg_list = list(self.get_register())
         AD7606C_ShowReg(reg_list, simple)
+
+    def show_essential_info(self):
+        reg_list = list(self.get_register())
+        adc_config = self.adc_config
+        t_intv = self.get_sampling_interval()
+        print('Basic ADC setting:')
+        print(f'Sampling rate: {pretty_num_unit(1.0/t_intv)}Hz ' \
+              f'(1 / {pretty_num_unit(t_intv)}s)')
+        volt_range_bits = reg_list[0x03-1] & 0x0F
+        info = AD7606C_ChRangeGetType(volt_range_bits)
+        print(f'Volt range: {info[2]:g} ~ {info[3]:g} V')
 
     def one_sample(self):
         # read a ADC sample data
