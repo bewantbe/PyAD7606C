@@ -832,9 +832,9 @@ class M3F20xmADC:
         dbg_print(5, 'M3F20xm_InitFIFO return', result)
         self.dwBuffSize = 2 * self.n_channel * int(n_max_frames)
         #self.lpBuffer   = (self.ty1 * (self.dwBuffSize // 2))()
-        self.lpBuffer_bytes = bytearray(self.dwBuffSize)
+        self.lpBuffer_ba = bytearray(self.dwBuffSize)
         self.lpBuffer   = (c_ushort * (self.dwBuffSize // 2)) \
-                          .from_buffer(self.lpBuffer_bytes)
+                          .from_buffer(self.lpBuffer_ba)
         self.b_adc_started = True
         result = M3F20xm_ADCStart(self.device_number)
         #time.sleep(0.1)
@@ -863,7 +863,7 @@ class M3F20xmADC:
                                   self.lpBuffer,
                                   self.dwBuffSize,
                                   byref(pdwRealSize))
-        arr = array.array(self.typecode, self.lpBuffer_bytes[:pdwRealSize.value])
+        arr = array.array(self.typecode, self.lpBuffer_ba[:pdwRealSize.value])
         #print('size:', self.dwBuffSize, pdwRealSize.value, len(arr))
         # we have few choices
         #   (1) cast type when calling ReadFIFO, then pass buffer to array directly
